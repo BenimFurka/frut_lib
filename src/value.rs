@@ -148,6 +148,7 @@ impl Value {
                 match (self, other) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
                     (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
+                    (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
                     _ => Err("Type mismatch in addition".to_string()),
                 }
             }

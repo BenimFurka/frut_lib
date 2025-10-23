@@ -1,17 +1,9 @@
-use frut_lib::{parse_files, analyze_project, File as FrutFile};
+use frut_lib::parse_code;
 
 fn main() {
-    let files = vec![FrutFile {
-        path: "main.ft".to_string(),
-        code: "var x: int = 42;".to_string(),
-        ast: None
-    }];
-    
-    let mut project = parse_files(files).project;
-    
-    if let Err(errors) = analyze_project(&mut project) {
-        println!("Found {} errors", errors.len());
-    } else {
-        println!("Analysis successful");
+    let result = parse_code("var x: int = 42;", "main.ft".to_string());
+    match result.is_success() {
+        false => println!("Found {} errors", result.errors.len()),
+        true => println!("Analysis successful"),
     }
 }

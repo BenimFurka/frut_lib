@@ -142,6 +142,48 @@ impl SimpleInterpreter {
                     Err("Callee must be a variable name".to_string())
                 }
             }
+
+            ExpressionKind::Cast { expr, target_type } => {
+                let val = self.interpret_expression(expr)?;
+                // Type cast
+                match target_type.as_str() {
+                    "int" => match val {
+                        Value::Int(n) => Ok(Value::Int(n)),
+                        Value::Double(n) => Ok(Value::Int(n as i64)),
+                        Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
+                        Value::String(s) => s.parse::<i64>()
+                            .map(Value::Int)
+                            .map_err(|_| format!("Cannot convert string '{}' to int", s)),
+                        _ => unreachable!("Invalid cast to int: {:?}", val),
+                    },
+                    "double" => match val {
+                        Value::Int(n) => Ok(Value::Double(n as f64)),
+                        Value::Double(n) => Ok(Value::Double(n)),
+                        Value::String(s) => s.parse::<f64>()
+                            .map(Value::Double)
+                            .map_err(|_| format!("Cannot convert string '{}' to double", s)),
+                        _ => unreachable!("Invalid cast to double: {:?}", val),
+                    },
+                    "string" => match val {
+                        Value::Void => Ok(Value::String("void".to_string())),
+                        Value::Int(n) => Ok(Value::String(n.to_string())),
+                        Value::Double(n) => Ok(Value::String(n.to_string())),
+                        Value::Bool(b) => Ok(Value::String(b.to_string())),
+                        Value::String(s) => Ok(Value::String(s)),
+                        Value::Function { .. } => Ok(Value::String("<function>".to_string())),
+                        Value::NativeFunction { .. } => Ok(Value::String("<native function>".to_string())),
+                    },
+                    "bool" => match val {
+                        Value::Void => Ok(Value::Bool(false)),
+                        Value::Int(n) => Ok(Value::Bool(n != 0)),
+                        Value::Double(n) => Ok(Value::Bool(n != 0.0)),
+                        Value::Bool(b) => Ok(Value::Bool(b)),
+                        Value::String(s) => Ok(Value::Bool(!s.is_empty())),
+                        Value::Function { .. } | Value::NativeFunction { .. } => Ok(Value::Bool(true)),
+                    },
+                    _ => unreachable!("Unknown target type '{}' for cast", target_type),
+                }
+            }
         }
     }
 }

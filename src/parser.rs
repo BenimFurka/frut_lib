@@ -737,7 +737,53 @@ impl Parser {
 
     /// Parse an expression
     fn parse_expression(&mut self) -> Result<Expression, ()> {
-        self.parse_logical_or()
+        self.parse_cast_expression()
+    }
+    
+    /// Parse type casting expression
+    fn parse_cast_expression(&mut self) -> Result<Expression, ()> {
+        let mut expr = self.parse_logical_or()?;
+        
+        while let Some(token) = self.current_token() {
+            if *token != Token::As {
+                break;
+            }
+            
+            self.advance();
+            
+            let target_type = match self.current_token() {
+                Some(Token::IntType) => "int".to_string(),
+                Some(Token::DoubleType) => "double".to_string(),
+                Some(Token::StringType) => "string".to_string(),
+                Some(Token::BoolType) => "bool".to_string(),
+                _ => {
+                    let pos = self.current_token_with_position().unwrap().position.clone();
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::TypeError,
+                        "Expected type after 'as' operator".to_string(),
+                        self.filename.clone(),
+                        pos.line,
+                        pos.column,
+                        pos.offset,
+                        pos.length,
+                        self.extract_code_snippet(pos.line, pos.column),
+                    ));
+                    return Err(());
+                }
+            };
+            self.advance();
+            
+            let pos = expr.pos.clone();
+            expr = Expression {
+                kind: ExpressionKind::Cast {
+                    expr: Box::new(expr),
+                    target_type,
+                },
+                pos,
+            };
+        }
+        
+        Ok(expr)
     }
 
     /// Parse logical OR expression
@@ -918,20 +964,54 @@ impl Parser {
         let mut expr = self.parse_literal_or_variable()?;
 
         loop {
-            if self.current_token() == Some(&Token::LParen) {
-                self.advance(); 
-                let args = self.parse_arguments()?;
-                self.expect_token(Token::RParen)?;
-                let pos = expr.pos.clone();
-                expr = Expression {
-                    kind: ExpressionKind::FunctionCall {
-                        callee: Box::new(expr),
-                        arguments: args,
-                    },
-                    pos,
-                };
-            } else {
-                break;
+            match self.current_token() {
+                Some(Token::LParen) => {
+                    self.advance(); 
+                    let args = self.parse_arguments()?;
+                    self.expect_token(Token::RParen)?;
+                    let pos = expr.pos.clone();
+                    expr = Expression {
+                        kind: ExpressionKind::FunctionCall {
+                            callee: Box::new(expr),
+                            arguments: args,
+                        },
+                        pos,
+                    };
+                }
+                Some(Token::As) => {
+                    let pos = self.current_token_with_position().unwrap().position.clone();
+                    self.advance();
+                    
+                    let target_type = match self.current_token() {
+                        Some(Token::IntType) => "int".to_string(),
+                        Some(Token::DoubleType) => "double".to_string(),
+                        Some(Token::StringType) => "string".to_string(),
+                        Some(Token::BoolType) => "bool".to_string(),
+                        _ => {
+                            self.errors.add_error(crate::ErrorReport::with_file(
+                                crate::ErrorType::TypeError,
+                                "Expected type after 'as' operator".to_string(),
+                                self.filename.clone(),
+                                pos.line,
+                                pos.column,
+                                pos.offset,
+                                pos.length,
+                                self.extract_code_snippet(pos.line, pos.column),
+                            ));
+                            return Err(());
+                        }
+                    };
+                    self.advance();
+                    
+                    expr = Expression {
+                        kind: ExpressionKind::Cast {
+                            expr: Box::new(expr),
+                            target_type,
+                        },
+                        pos,
+                    };
+                }
+                _ => break,
             }
         }
 

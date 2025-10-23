@@ -7,6 +7,8 @@ use core::fmt;
 
 use alloc::{string::String, vec::Vec};
 
+use crate::ast::Position;
+
 /// Error types for the Frut
 #[derive(Debug, Clone, PartialEq)]
 pub enum ErrorType {
@@ -70,34 +72,6 @@ impl fmt::Display for ErrorType {
             ErrorType::RuntimeError => write!(f, "Runtime error"),
             ErrorType::IndexOutOfBounds => write!(f, "Index out of bounds"),
             ErrorType::InternalError => write!(f, "Internal error"),
-        }
-    }
-}
-
-/// Position information for error reporting
-#[derive(Debug, Clone, PartialEq)]
-pub struct Position {
-    /// File path
-    pub file: String,
-    /// Line number (1-based)
-    pub line: usize,
-    /// Column number (1-based)
-    pub column: usize,
-    /// Absolute offset in the source
-    pub offset: usize,
-    /// Length of the problematic code segment
-    pub length: usize,
-}
-
-impl Position {
-    /// Create a new position with filename
-    pub fn new(file: String, line: usize, column: usize, offset: usize, length: usize) -> Self {
-        Self {
-            file,
-            line,
-            column,
-            offset,
-            length,
         }
     }
 }

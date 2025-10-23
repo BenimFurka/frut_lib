@@ -5,8 +5,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::ast::{Token, TokenWithPosition};
-use crate::errors::Position;
+use crate::ast::{Token, TokenWithPosition, Position};
 
 /// Lexer for tokenizing Frut source code
 pub struct Lexer {
@@ -281,6 +280,7 @@ impl Lexer {
             "bool" => Token::BoolType,
             "double" => Token::DoubleType,
             "void" => Token::VoidType,
+            "as" => Token::As,
             _ => Token::Identifier(text),
         }
     }

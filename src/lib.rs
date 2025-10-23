@@ -8,7 +8,7 @@
 //!
 //! - No-std compatible (uses only core and alloc)
 //! - Modular architecture for extensibility
-//! - Support for both interpretation and compilation workflows
+//! - Support for both interpretation and compilation workflows in the future
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -27,12 +27,6 @@ pub mod semantic;
 pub mod types;
 pub mod value;
 
-#[cfg(not(feature = "std"))]
-use linked_list_allocator::LockedHeap;
-
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-
 // Core types and functions
 pub use ast::*;
 pub use errors::*;
@@ -44,6 +38,13 @@ pub use value::*;
 use crate::alloc::*;
 
 #[cfg(not(feature = "std"))]
+use linked_list_allocator::LockedHeap;
+
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::hash::BuildHasherDefault;
+
+#[cfg(not(feature = "std"))]
 use core::panic::PanicInfo;
 
 #[cfg(not(feature = "std"))]
@@ -51,6 +52,9 @@ use core::panic::PanicInfo;
 fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
+
+#[allow(deprecated)]
+pub type HashMap<K, V> = hashbrown::HashMap<K, V, BuildHasherDefault<core::hash::SipHasher>>;
 
 /// Represents a source file provided to the core (can be in-memory or from disk)
 #[derive(Debug, Clone)]
@@ -259,11 +263,11 @@ pub fn analyze_project(project: &mut Project) -> core::result::Result<(), ErrorC
     if all_errors.is_empty() { Ok(()) } else { Err(all_errors) }
 }
 
-/// Main parsing function - entry point for the library
+/// Simple parsing code
 pub fn parse_code(input: &str, filename: String) -> ParseResult {
     #[cfg(not(feature = "std"))]
     unsafe { ALLOCATOR.lock().init(HEAP_START.as_mut_ptr(), HEAP_SIZE); }
-
+    
     let mut lexer = Lexer::new(input, filename.clone());
     let tokens = lexer.tokenize();
 

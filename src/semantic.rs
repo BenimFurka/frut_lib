@@ -7,11 +7,10 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use core::hash::BuildHasherDefault;
-
 use crate::ast::{Expression, ExpressionKind, Statement, StatementKind, UnaryOperator, BinaryOperator};
 use crate::errors::{ErrorCollection, ErrorReport, ErrorType};
 use crate::types::Type;
+use crate::HashMap;
 
 /// Represents a symbol in the environment (either a variable or a function)
 #[derive(Debug, Clone)]
@@ -19,10 +18,6 @@ enum Symbol {
     Variable(VariableInfo),
     Function(FunctionInfo),
 }
-
-/// TODO: Maybe move?
-#[allow(deprecated)]
-pub type HashMap<K, V> = hashbrown::HashMap<K, V, BuildHasherDefault<core::hash::SipHasher>>;
 
 /// Represents a variable in the environment
 #[derive(Debug, Clone)]
@@ -138,6 +133,28 @@ impl<'a> TypeChecker<'a> {
     fn new(environment: &'a Environment) -> Self {
         Self { environment }
     }
+    
+    /// Check if a cast from source_type to target_type is valid
+    fn is_valid_cast(&self, source_type: &Type, target_type: &Type) -> bool {
+        match (source_type, target_type) {
+            // Int to Double is always valid
+            (Type::Int, Type::Double) => true,
+            // Double to Int is valid (truncates decimal part)
+            (Type::Double, Type::Int) => true,
+            // String to Int/Double if the string is a valid number
+            (Type::String, Type::Int) | (Type::String, Type::Double) => true,
+            // Any type to String is valid
+            (_, Type::String) => true,
+            // Bool to Int (true=1, false=0)
+            (Type::Bool, Type::Int) => true,
+            // Int to Bool (0=false, non-zero=true)
+            (Type::Int, Type::Bool) => true,
+            // Same type is always valid
+            (t1, t2) if t1 == t2 => true,
+            // Invalid cast
+            _ => false,
+        }
+    }
 
     /// Get the type of an expression
     fn get_expression_type(&self, expr: &Expression) -> Result<Type, (ErrorType, String, crate::Position)> {
@@ -216,7 +233,23 @@ impl<'a> TypeChecker<'a> {
                 let right_type = self.get_expression_type(right)?;
 
                 match operator {
-                    BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => {
+                    BinaryOperator::Add => {
+                        if left_type == right_type {
+                            Ok(left_type)
+                        } else if left_type == Type::String && right_type == Type::String {
+                            Ok(Type::String)
+                        } else {
+                            Err((
+                                ErrorType::TypeMismatch {
+                                    expected: "matching types".to_string(),
+                                    found: format!("{} and {}", left_type, right_type),
+                                },
+                                "Cannot perform addition operation on non-matching or mismatched types".to_string(),
+                                expr.pos.clone(),
+                            ))
+                        }
+                    }
+                    BinaryOperator::Sub | BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => {
                         if left_type == right_type && (left_type == Type::Int || left_type == Type::Double) {
                             Ok(left_type)
                         } else {
@@ -274,17 +307,21 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
             }
-            ExpressionKind::FunctionCall { callee, arguments } => {
-                if let ExpressionKind::Variable(name) = &callee.kind {
-                    if name == "print" {
-                        // TODO: UMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-                        for arg in arguments {
-                            self.get_expression_type(arg)?;
-                        }
-                        return Ok(Type::Void);
-                    }
+            ExpressionKind::Cast { expr, target_type } => {
+                let expr_type = self.get_expression_type(expr)?;
+                let target_type = Type::from(target_type.as_str());
+                
+                if !self.is_valid_cast(&expr_type, &target_type) {
+                    return Err((
+                        ErrorType::TypeError,
+                        format!("Cannot cast from {} to {}", expr_type, target_type),
+                        expr.pos.clone(),
+                    ));
                 }
-
+                
+                Ok(target_type)
+            }
+            ExpressionKind::FunctionCall { callee, arguments } => {
                 let callee_type = self.get_expression_type(callee)?;
 
                 if let ExpressionKind::Variable(name) = &callee.kind {

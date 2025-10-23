@@ -7,6 +7,34 @@ use core::fmt;
 
 use alloc::{boxed::Box, string::String, vec::Vec};
 
+/// Position information for error reporting
+#[derive(Debug, Clone, PartialEq)]
+pub struct Position {
+    /// File path
+    pub file: String,
+    /// Line number (1-based)
+    pub line: usize,
+    /// Column number (1-based)
+    pub column: usize,
+    /// Absolute offset in the source
+    pub offset: usize,
+    /// Length of the problematic code segment
+    pub length: usize,
+}
+
+impl Position {
+    /// Create a new position with filename
+    pub fn new(file: String, line: usize, column: usize, offset: usize, length: usize) -> Self {
+        Self {
+            file,
+            line,
+            column,
+            offset,
+            length,
+        }
+    }
+}
+
 /// Token types for the Frut lexer
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -21,6 +49,7 @@ pub enum Token {
     Return,
     While,
     Import,
+    As,
 
     // Types
     StringType,
@@ -82,6 +111,7 @@ impl fmt::Display for Token {
             Token::Return => write!(f, "return"),
             Token::While => write!(f, "while"),
             Token::Import => write!(f, "import"),
+            Token::As => write!(f, "as"),
             Token::StringType => write!(f, "string"),
             Token::IntType => write!(f, "int"),
             Token::BoolType => write!(f, "bool"),
@@ -146,6 +176,7 @@ impl Token {
                 | Token::NotEqual
                 | Token::LogicalAnd
                 | Token::LogicalOr
+                | Token::As
         )
     }
 
@@ -417,6 +448,12 @@ pub enum ExpressionKind {
         callee: Box<Expression>,
         arguments: Vec<Expression>,
     },
+    
+    // Type casting
+    Cast {
+        expr: Box<Expression>,
+        target_type: String,
+    },
 }
 
 impl fmt::Display for Expression {
@@ -435,6 +472,9 @@ impl fmt::Display for Expression {
             }
             ExpressionKind::FunctionCall { callee, arguments } => {
                 write!(f, "{}({})", callee, arguments.iter().map(|a| format!("{}", a)).collect::<Vec<_>>().join(", "))
+            }
+            ExpressionKind::Cast { expr, target_type } => {
+                write!(f, "({} as {})", expr, target_type)
             }
         }
     }

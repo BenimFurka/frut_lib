@@ -1,12 +1,12 @@
 [package]
 name = "frut_lib"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "A no_std library for parsing, analyzing, and executing the Frut programming language."
 license = "Apache-2.0"
 authors = ["BenimFurka"]
 repository = "https://github.com/BenimFurka/frut_lib"
-keywords = ["programming-language", "ast", "no-std"]
+keywords = ["programming-language", "ast", "no-std", "frut"]
 categories = ["parser-implementations", "development-tools", "no-std"]
 
 [lib]
