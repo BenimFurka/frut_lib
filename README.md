@@ -54,4 +54,4 @@ cargo run --example interp
 For documentation, visit [docs.rs/frut_lib](https://docs.rs/frut_lib).
 
 ## License
-Licensed under the Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
+Licensed under the Apache License, Version 2.0 [LICENSE](LICENSE).
