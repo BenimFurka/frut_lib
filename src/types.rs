@@ -4,10 +4,11 @@
 
 use core::fmt;
 
-use alloc::{boxed::Box, string::ToString, vec::Vec};
+use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
+use crate::HashMap;
 
 /// Supported data types in the Frut
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Type {
     String,
     Int,
@@ -18,8 +19,32 @@ pub enum Type {
         param_types: Vec<Type>,
         return_type: Box<Type>,
     },
+    Struct {
+        name: String,
+        fields: HashMap<String, Type>,
+    },
     Void,
-    // TODO: Custom types?
+}
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::String, Type::String) => true,
+            (Type::Int, Type::Int) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Double, Type::Double) => true,
+            (Type::Function, Type::Function) => true,
+            (Type::FunctionType { param_types: p1, return_type: r1 }, 
+             Type::FunctionType { param_types: p2, return_type: r2 }) => {
+                p1 == p2 && r1 == r2
+            },
+            (Type::Struct { name: n1, .. }, Type::Struct { name: n2, .. }) => {
+                n1 == n2
+            },
+            (Type::Void, Type::Void) => true,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -34,6 +59,7 @@ impl fmt::Display for Type {
                 let params = param_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
                 write!(f, "func({}) -> {}", params, return_type)
             }
+            Type::Struct { name, .. } => write!(f, "{}", name),
             Type::Void => write!(f, "void"),
         }
     }
@@ -48,7 +74,10 @@ impl From<&str> for Type {
             "double" => Type::Double,
             "function" => Type::Function,
             "void" => Type::Void,
-            _ => panic!("Unknown type: {}", s),
+            _ => Type::Struct {
+                name: s.to_string(),
+                fields: HashMap::default(),
+            },
         }
     }
 }

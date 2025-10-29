@@ -50,6 +50,8 @@ pub enum Token {
     While,
     Import,
     As,
+    Type,
+    Ext,
 
     // Types
     StringType,
@@ -112,6 +114,8 @@ impl fmt::Display for Token {
             Token::While => write!(f, "while"),
             Token::Import => write!(f, "import"),
             Token::As => write!(f, "as"),
+            Token::Type => write!(f, "type"),
+            Token::Ext => write!(f, "ext"),
             Token::StringType => write!(f, "string"),
             Token::IntType => write!(f, "int"),
             Token::BoolType => write!(f, "bool"),
@@ -358,6 +362,16 @@ pub enum StatementKind {
         path: Vec<String>,
         kind: ImportKind,
     },
+    /// Type declaration: `type Name { field1: type1; field2: type2; }`
+    TypeDeclaration {
+        name: String,
+        fields: Vec<Field>,
+    },
+    /// Extension declaration: `ext TypeName { func method(self: TypeName, ...): ReturnType { ... } }`
+    ExtDeclaration {
+        type_name: String,
+        methods: Vec<Statement>,
+    },
 }
 
 impl fmt::Display for Statement {
@@ -408,6 +422,17 @@ impl fmt::Display for Statement {
                     ImportKind::Group(names) => write!(f, "import {}.{{{}}}", path_str, names.join(", ")),
                 }
             }
+            StatementKind::TypeDeclaration { name, fields } => {
+                write!(f, "type {} {{ ", name)?;
+                for (i, field) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, "; ")?; }
+                    write!(f, "{}: {}", field.name, field.field_type)?;
+                }
+                write!(f, " }}")
+            }
+            StatementKind::ExtDeclaration { type_name, methods: _ } => {
+                write!(f, "ext {} {{ ... }}", type_name)
+            }
         }
     }
 }
@@ -454,6 +479,18 @@ pub enum ExpressionKind {
         expr: Box<Expression>,
         target_type: String,
     },
+    
+    // Struct literal
+    StructLiteral {
+        type_name: String,
+        fields: Vec<(String, Expression)>,
+    },
+    
+    // Member access
+    MemberAccess {
+        object: Box<Expression>,
+        member: String,
+    },
 }
 
 impl fmt::Display for Expression {
@@ -476,6 +513,17 @@ impl fmt::Display for Expression {
             ExpressionKind::Cast { expr, target_type } => {
                 write!(f, "({} as {})", expr, target_type)
             }
+            ExpressionKind::StructLiteral { type_name, fields } => {
+                write!(f, "{} {{ ", type_name)?;
+                for (i, (name, expr)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", name, expr)?;
+                }
+                write!(f, " }}")
+            }
+            ExpressionKind::MemberAccess { object, member } => {
+                write!(f, "{}.{}", object, member)
+            }
         }
     }
 }
@@ -485,6 +533,14 @@ impl fmt::Display for Expression {
 pub struct Parameter {
     pub name: String,
     pub param_type: String,
+    pub pos: crate::Position,
+}
+
+/// Struct field
+#[derive(Debug, Clone, PartialEq)]
+pub struct Field {
+    pub name: String,
+    pub field_type: String,
     pub pos: crate::Position,
 }
 

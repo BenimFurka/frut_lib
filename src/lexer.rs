@@ -275,6 +275,8 @@ impl Lexer {
             "return" => Token::Return,
             "while" => Token::While,
             "import" => Token::Import,
+            "type" => Token::Type,
+            "ext" => Token::Ext,
             "string" => Token::StringType,
             "int" => Token::IntType,
             "bool" => Token::BoolType,

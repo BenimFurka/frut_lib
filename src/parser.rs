@@ -69,6 +69,8 @@ impl Parser {
             Some(Token::Func) => self.parse_function_declaration(),
             Some(Token::Return) => self.parse_return_statement(),
             Some(Token::Import) => self.parse_import_statement(),
+            Some(Token::Type) => self.parse_type_declaration(),
+            Some(Token::Ext) => self.parse_ext_declaration(),
             Some(Token::LBrace) => {
                 self.parse_block()
             },
@@ -113,33 +115,7 @@ impl Parser {
                 if let Some(token) = self.current_token() {
                     if token == &Token::Semicolon {
                         self.advance();
-                    } else {
-                        let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
-                        self.errors.add_error(crate::ErrorReport::with_file(
-                            crate::ErrorType::ExpectedToken(";".to_string()),
-                            "Expected ;".to_string(),
-                            self.filename.clone(),
-                            pos.line,
-                            pos.column,
-                            pos.offset,
-                            pos.length,
-                            self.extract_code_snippet(pos.line, pos.column),
-                        ));
-                        return Err(());
                     }
-                } else {
-                    let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
-                    self.errors.add_error(crate::ErrorReport::with_file(
-                        crate::ErrorType::ExpectedToken(";".to_string()),
-                        "Expected ;".to_string(),
-                        self.filename.clone(),
-                        pos.line,
-                        pos.column,
-                        pos.offset,
-                        pos.length,
-                        self.extract_code_snippet(pos.line, pos.column),
-                    ));
-                    return Err(());
                 }
             }
         }
@@ -310,6 +286,258 @@ impl Parser {
         })
     }
 
+    /// Parse type declaration
+    fn parse_type_declaration(&mut self) -> Result<Statement, ()> {
+        let start_pos = self.current_token_with_position().unwrap().position.clone();
+        self.expect_token(Token::Type)?;
+        
+        let name = match self.current_token_with_position() {
+            Some(twp) => match &twp.token {
+                Token::Identifier(name) => {
+                    let name = name.clone();
+                    self.advance();
+                    name
+                }
+                _ => {
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::ExpectedIdentifier,
+                        "Expected identifier after 'type'".to_string(),
+                        self.filename.clone(),
+                        twp.position.line,
+                        twp.position.column,
+                        twp.position.offset,
+                        twp.position.length,
+                        self.extract_code_snippet(twp.position.line, twp.position.column),
+                    ));
+                    return Err(());
+                }
+            },
+            None => {
+                let pos = self.tokens.last().unwrap().position.clone();
+                self.errors.add_error(crate::ErrorReport::with_file(
+                    crate::ErrorType::ExpectedIdentifier,
+                    "Expected identifier after 'type'".to_string(),
+                    self.filename.clone(),
+                    pos.line,
+                    pos.column,
+                    pos.offset,
+                    pos.length,
+                    self.extract_code_snippet(pos.line, pos.column),
+                ));
+                return Err(());
+            }
+        };
+
+        self.expect_token(Token::LBrace)?;
+
+        let mut fields = Vec::new();
+        while let Some(token) = self.current_token() {
+            if token == &Token::RBrace {
+                break;
+            }
+            
+            let field_pos = self.current_token_with_position().unwrap().position.clone();
+            let field_name = match self.current_token_with_position() {
+                Some(twp) => match &twp.token {
+                    Token::Identifier(name) => {
+                        let name = name.clone();
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        self.errors.add_error(crate::ErrorReport::with_file(
+                            crate::ErrorType::ExpectedIdentifier,
+                            "Expected field name".to_string(),
+                            self.filename.clone(),
+                            twp.position.line,
+                            twp.position.column,
+                            twp.position.offset,
+                            twp.position.length,
+                            self.extract_code_snippet(twp.position.line, twp.position.column),
+                        ));
+                        self.synchronize();
+                        continue;
+                    }
+                },
+                None => {
+                    let pos = self.tokens.last().unwrap().position.clone();
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::ExpectedIdentifier,
+                        "Expected field name".to_string(),
+                        self.filename.clone(),
+                        pos.line,
+                        pos.column,
+                        pos.offset,
+                        pos.length,
+                        self.extract_code_snippet(pos.line, pos.column),
+                    ));
+                    self.synchronize();
+                    continue;
+                }
+            };
+
+            self.expect_token(Token::Colon)?;
+
+            let field_type = match self.current_token_with_position() {
+                Some(twp) => match &twp.token {
+                    Token::Identifier(type_name) => {
+                        let type_name = type_name.clone();
+                        self.advance();
+                        type_name
+                    }
+                    Token::StringType => {
+                        self.advance();
+                        "string".to_string()
+                    }
+                    Token::IntType => {
+                        self.advance();
+                        "int".to_string()
+                    }
+                    Token::BoolType => {
+                        self.advance();
+                        "bool".to_string()
+                    }
+                    Token::DoubleType => {
+                        self.advance();
+                        "double".to_string()
+                    }
+                    Token::VoidType => {
+                        self.advance();
+                        "void".to_string()
+                    }
+                    _ => {
+                        self.errors.add_error(crate::ErrorReport::with_file(
+                            crate::ErrorType::ExpectedType,
+                            "Expected type name".to_string(),
+                            self.filename.clone(),
+                            twp.position.line,
+                            twp.position.column,
+                            twp.position.offset,
+                            twp.position.length,
+                            self.extract_code_snippet(twp.position.line, twp.position.column),
+                        ));
+                        self.synchronize();
+                        continue;
+                    }
+                },
+                None => {
+                    let pos = self.tokens.last().unwrap().position.clone();
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::ExpectedType,
+                        "Expected type name".to_string(),
+                        self.filename.clone(),
+                        pos.line,
+                        pos.column,
+                        pos.offset,
+                        pos.length,
+                        self.extract_code_snippet(pos.line, pos.column),
+                    ));
+                    self.synchronize();
+                    continue;
+                }
+            };
+
+            let field = crate::ast::Field {
+                name: field_name,
+                field_type,
+                pos: field_pos,
+            };
+            fields.push(field);
+
+            match self.current_token() {
+                Some(Token::Semicolon) => {
+                    self.advance();
+                }
+                Some(Token::RBrace) => {
+                    break;
+                }
+                _ => {
+                    let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::ExpectedToken("; or }".to_string()),
+                        "Expected ';' or '}'".to_string(),
+                        self.filename.clone(),
+                        pos.line,
+                        pos.column,
+                        pos.offset,
+                        pos.length,
+                        self.extract_code_snippet(pos.line, pos.column),
+                    ));
+                    self.synchronize();
+                    continue;
+                }
+            }
+        }
+
+        self.expect_token(Token::RBrace)?;
+
+        Ok(Statement {
+            kind: StatementKind::TypeDeclaration { name, fields },
+            pos: start_pos,
+        })
+    }
+
+    /// Parse extension declaration
+    fn parse_ext_declaration(&mut self) -> Result<Statement, ()> {
+        let start_pos = self.current_token_with_position().unwrap().position.clone();
+        self.expect_token(Token::Ext)?;
+        
+        let type_name = match self.current_token_with_position() {
+            Some(twp) => match &twp.token {
+                Token::Identifier(name) => {
+                    let name = name.clone();
+                    self.advance();
+                    name
+                }
+                _ => {
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::ExpectedIdentifier,
+                        "Expected identifier after 'ext'".to_string(),
+                        self.filename.clone(),
+                        twp.position.line,
+                        twp.position.column,
+                        twp.position.offset,
+                        twp.position.length,
+                        self.extract_code_snippet(twp.position.line, twp.position.column),
+                    ));
+                    return Err(());
+                }
+            },
+            None => {
+                let pos = self.tokens.last().unwrap().position.clone();
+                self.errors.add_error(crate::ErrorReport::with_file(
+                    crate::ErrorType::ExpectedIdentifier,
+                    "Expected identifier after 'ext'".to_string(),
+                    self.filename.clone(),
+                    pos.line,
+                    pos.column,
+                    pos.offset,
+                    pos.length,
+                    self.extract_code_snippet(pos.line, pos.column),
+                ));
+                return Err(());
+            }
+        };
+
+        self.expect_token(Token::LBrace)?;
+
+        let mut methods = Vec::new();
+        while let Some(token) = self.current_token() {
+            if token == &Token::RBrace {
+                break;
+            }
+            
+            methods.push(self.parse_statement()?);
+        }
+
+        self.expect_token(Token::RBrace)?;
+
+        Ok(Statement {
+            kind: StatementKind::ExtDeclaration { type_name, methods },
+            pos: start_pos,
+        })
+    }
+
     /// Parse variable delcaration
     fn parse_variable_declaration(&mut self) -> Result<Statement, ()> {
         let start_pos = self.current_token_with_position().unwrap().position.clone();
@@ -360,6 +588,11 @@ impl Parser {
                 Token::BoolType => { self.advance(); "bool".to_string() },
                 Token::DoubleType => { self.advance(); "double".to_string() },
                 Token::VoidType => { self.advance(); "void".to_string() },
+                Token::Identifier(type_name) => { 
+                    let type_name = type_name.clone();
+                    self.advance(); 
+                    type_name 
+                },
                 _ => {
                     self.errors.add_error(crate::ErrorReport::with_file(
                         crate::ErrorType::ExpectedType,
@@ -475,6 +708,11 @@ impl Parser {
                     self.advance();
                     "void".to_string()
                 }
+                Some(Token::Identifier(type_name)) => {
+                    let type_name = type_name.clone();
+                    self.advance();
+                    type_name
+                }
                 _ => {
                     let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
                     self.errors.add_error(crate::ErrorReport::with_file(
@@ -509,7 +747,7 @@ impl Parser {
         })
     }
 
-     /// Parse parameters
+    /// Parse parameters
     fn parse_parameters(&mut self) -> Result<Vec<Parameter>, ()> {
         let mut params = Vec::new();
 
@@ -562,6 +800,11 @@ impl Parser {
                 Some(Token::DoubleType) => {
                     self.advance();
                     "double".to_string()
+                }
+                Some(Token::Identifier(type_name)) => {
+                    let type_name = type_name.clone();
+                    self.advance();
+                    type_name
                 }
                 _ => {
                     let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
@@ -756,6 +999,7 @@ impl Parser {
                 Some(Token::DoubleType) => "double".to_string(),
                 Some(Token::StringType) => "string".to_string(),
                 Some(Token::BoolType) => "bool".to_string(),
+                Some(Token::Identifier(type_name)) => type_name.clone(),
                 _ => {
                     let pos = self.current_token_with_position().unwrap().position.clone();
                     self.errors.add_error(crate::ErrorReport::with_file(
@@ -987,6 +1231,7 @@ impl Parser {
                         Some(Token::DoubleType) => "double".to_string(),
                         Some(Token::StringType) => "string".to_string(),
                         Some(Token::BoolType) => "bool".to_string(),
+                        Some(Token::Identifier(type_name)) => type_name.clone(),
                         _ => {
                             self.errors.add_error(crate::ErrorReport::with_file(
                                 crate::ErrorType::TypeError,
@@ -1011,6 +1256,159 @@ impl Parser {
                         pos,
                     };
                 }
+                Some(Token::Dot) => {
+                    self.advance();
+                    let member = match self.current_token_with_position() {
+                        Some(twp) => match &twp.token {
+                            Token::Identifier(name) => {
+                                let name = name.clone();
+                                self.advance();
+                                name
+                            }
+                            _ => {
+                                self.errors.add_error(crate::ErrorReport::with_file(
+                                    crate::ErrorType::ExpectedIdentifier,
+                                    "Expected identifier after '.'".to_string(),
+                                    self.filename.clone(),
+                                    twp.position.line,
+                                    twp.position.column,
+                                    twp.position.offset,
+                                    twp.position.length,
+                                    self.extract_code_snippet(twp.position.line, twp.position.column),
+                                ));
+                                return Err(());
+                            }
+                        },
+                        None => {
+                            let pos = self.tokens.last().unwrap().position.clone();
+                            self.errors.add_error(crate::ErrorReport::with_file(
+                                crate::ErrorType::ExpectedIdentifier,
+                                "Expected identifier after '.'".to_string(),
+                                self.filename.clone(),
+                                pos.line,
+                                pos.column,
+                                pos.offset,
+                                pos.length,
+                                self.extract_code_snippet(pos.line, pos.column),
+                            ));
+                            return Err(());
+                        }
+                    };
+                    let pos = expr.pos.clone();
+                    expr = Expression {
+                        kind: ExpressionKind::MemberAccess {
+                            object: Box::new(expr),
+                            member,
+                        },
+                        pos,
+                    };
+                }
+                Some(Token::LBrace) => {
+                    if let ExpressionKind::Variable(type_name) = &expr.kind {
+                        let looks_like_type = type_name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+                        if !looks_like_type {
+                            break;
+                        }
+                        self.advance();
+                        let mut fields = Vec::new();
+                        
+                        while let Some(token) = self.current_token() {
+                            if token == &Token::RBrace {
+                                break;
+                            }
+                            
+                            let field_name = match self.current_token_with_position() {
+                                Some(twp) => match &twp.token {
+                                    Token::Identifier(name) => {
+                                        let name = name.clone();
+                                        self.advance();
+                                        name
+                                    }
+                                    _ => {
+                                        self.errors.add_error(crate::ErrorReport::with_file(
+                                            crate::ErrorType::ExpectedIdentifier,
+                                            "Expected field name in struct literal".to_string(),
+                                            self.filename.clone(),
+                                            twp.position.line,
+                                            twp.position.column,
+                                            twp.position.offset,
+                                            twp.position.length,
+                                            self.extract_code_snippet(twp.position.line, twp.position.column),
+                                        ));
+                                        self.synchronize();
+                                        continue;
+                                    }
+                                },
+                                None => {
+                                    let pos = self.tokens.last().unwrap().position.clone();
+                                    self.errors.add_error(crate::ErrorReport::with_file(
+                                        crate::ErrorType::ExpectedIdentifier,
+                                        "Expected field name in struct literal".to_string(),
+                                        self.filename.clone(),
+                                        pos.line,
+                                        pos.column,
+                                        pos.offset,
+                                        pos.length,
+                                        self.extract_code_snippet(pos.line, pos.column),
+                                    ));
+                                    self.synchronize();
+                                    continue;
+                                }
+                            };
+                            
+                            let field_value = if self.current_token() == Some(&Token::Colon) {
+                                self.advance();
+                                self.parse_expression()?
+                            } else {
+                                let pos = expr.pos.clone();
+                                Expression {
+                                    kind: ExpressionKind::Variable(field_name.clone()),
+                                    pos,
+                                }
+                            };
+                            
+                            fields.push((field_name, field_value));
+                            
+                            match self.current_token() {
+                                Some(Token::Comma) => {
+                                    self.advance();
+                                }
+                                Some(Token::RBrace) => {
+                                    break;
+                                }
+                                _ => {
+                                    let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
+                                    self.errors.add_error(crate::ErrorReport::with_file(
+                                        crate::ErrorType::ExpectedToken(", or }".to_string()),
+                                        "Expected ',' or '}' in struct literal".to_string(),
+                                        self.filename.clone(),
+                                        pos.line,
+                                        pos.column,
+                                        pos.offset,
+                                        pos.length,
+                                        self.extract_code_snippet(pos.line, pos.column),
+                                    ));
+                                    self.synchronize();
+                                    continue;
+                                }
+                            }
+                        }
+                        
+                        self.expect_token(Token::RBrace)?;
+                        
+                        let pos = expr.pos.clone();
+                        expr = Expression {
+                            kind: ExpressionKind::StructLiteral {
+                                type_name: type_name.clone(),
+                                fields,
+                            },
+                            pos,
+                        };
+                    } else {
+                        break;
+                    }
+                }
+
                 _ => break,
             }
         }
@@ -1086,6 +1484,12 @@ impl Parser {
                         kind: ExpressionKind::Variable(name),
                         pos: twp.position,
                     })
+                }
+                Token::LParen => {
+                    self.advance();
+                    let expr = self.parse_expression()?;
+                    self.expect_token(Token::RParen)?;
+                    Ok(expr)
                 }
                 Token::LBrace => {
                     self.advance();

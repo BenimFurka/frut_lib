@@ -52,6 +52,10 @@ pub enum Value {
         arity: Option<usize>,
         func: NativeFn,
     },
+    Struct {
+        type_name: String,
+        fields: HashMap<String, Value>,
+    },
     Void,
 }
 
@@ -64,6 +68,14 @@ impl fmt::Display for Value {
             Value::Double(n) => write!(f, "{}", n),
             Value::Function { name, .. } => write!(f, "<func {}>", name),
             Value::NativeFunction { name, .. } => write!(f, "<native func {}>", name),
+            Value::Struct { type_name, fields } => {
+                write!(f, "{} {{ ", type_name)?;
+                for (i, (name, value)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", name, value)?;
+                }
+                write!(f, " }}")
+            }
             Value::Void => write!(f, "void"),
         }
     }
@@ -79,6 +91,10 @@ impl Value {
             Value::Double(_) => Type::Double,
             Value::Function { .. } => Type::Function,
             Value::NativeFunction { .. } => Type::Function,
+            Value::Struct { type_name, fields } => Type::Struct { 
+                name: type_name.clone(),
+                fields: fields.iter().map(|(k, v)| (k.clone(), v.get_type())).collect(),
+            },
             Value::Void => Type::Void,
         }
     }
@@ -149,6 +165,9 @@ impl Value {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
                     (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
                     (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
+                    (Value::String(a), Value::Int(b)) => Ok(Value::String(format!("{a}{b}"))),
+                    (Value::String(a), Value::Double(b)) => Ok(Value::String(format!("{a}{b}"))),
+                    (Value::String(a), Value::Bool(b)) => Ok(Value::String(format!("{a}{b}"))),
                     _ => Err("Type mismatch in addition".to_string()),
                 }
             }

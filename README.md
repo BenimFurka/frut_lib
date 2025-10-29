@@ -18,14 +18,14 @@ To use `frut_lib`, first add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-frut_lib = "0.0.2"
+frut_lib = "0.0.3"
 ```
 
 For `no_std` environments, disable default features:
 
 ```toml
 [dependencies]
-frut_lib = { version = "0.0.2", default-features = false }
+frut_lib = { version = "0.0.3", default-features = false }
 ```
 
 ## Usage

@@ -1,6 +1,6 @@
 use frut_lib::ast::{Expression, ExpressionKind, Statement, StatementKind};
 use frut_lib::value::{RuntimeEnvironment, Value};
-use frut_lib::{parse_files, analyze_project, File as FrutFile};
+use frut_lib::{analyze_project, parse_files, File as FrutFile, HashMap};
 
 // Result
 type InterpretResult = Result<Value, String>;
@@ -172,6 +172,9 @@ impl SimpleInterpreter {
                         Value::String(s) => Ok(Value::String(s)),
                         Value::Function { .. } => Ok(Value::String("<function>".to_string())),
                         Value::NativeFunction { .. } => Ok(Value::String("<native function>".to_string())),
+                        Value::Struct { type_name, fields } => {
+                            Ok(Value::String(format!("{} {{ {} fields }}", type_name, fields.len())))
+                        }
                     },
                     "bool" => match val {
                         Value::Void => Ok(Value::Bool(false)),
@@ -180,8 +183,33 @@ impl SimpleInterpreter {
                         Value::Bool(b) => Ok(Value::Bool(b)),
                         Value::String(s) => Ok(Value::Bool(!s.is_empty())),
                         Value::Function { .. } | Value::NativeFunction { .. } => Ok(Value::Bool(true)),
+                        Value::Struct { .. } => Ok(Value::Bool(true)),
                     },
                     _ => unreachable!("Unknown target type '{}' for cast", target_type),
+                }
+            }
+
+            ExpressionKind::StructLiteral { type_name, fields } => {
+                let mut field_values = HashMap::default();
+                for (name, expr) in fields {
+                    let value = self.interpret_expression(expr)?;
+                    field_values.insert(name.clone(), value);
+                }
+                Ok(Value::Struct {
+                    type_name: type_name.clone(),
+                    fields: field_values,
+                })
+            }
+            ExpressionKind::MemberAccess { object, member } => {
+                let obj_value = self.interpret_expression(object)?;
+                if let Value::Struct { fields, .. } = obj_value {
+                    if let Some(value) = fields.get(member) {
+                        Ok(value.clone())
+                    } else {
+                        Err(format!("Struct has no field '{}'", member))
+                    }
+                } else {
+                    Err("Member access can only be performed on structs".to_string())
                 }
             }
         }
