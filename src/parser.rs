@@ -75,15 +75,32 @@ impl Parser {
                 self.parse_block()
             },
             Some(Token::Identifier(_)) => {
-                if self.peek_token() == Some(&Token::Assign) {
-                    self.parse_assignment()
+                let start_pos = self.current_token_with_position().unwrap().position.clone();
+                let expr = self.parse_expression()?;
+                if self.current_token() == Some(&Token::Assign) {
+                    match &expr.kind {
+                        ExpressionKind::Variable(_) | ExpressionKind::MemberAccess { .. } => {
+                            self.advance();
+                            let value = self.parse_expression()?;
+                            Ok(Statement { kind: StatementKind::Assignment { target: expr, value }, pos: start_pos })
+                        }
+                        _ => {
+                            let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
+                            self.errors.add_error(crate::ErrorReport::with_file(
+                                crate::ErrorType::SyntaxError,
+                                "Invalid assignment target".to_string(),
+                                self.filename.clone(),
+                                pos.line,
+                                pos.column,
+                                pos.offset,
+                                pos.length,
+                                self.extract_code_snippet(pos.line, pos.column),
+                            ));
+                            return Err(());
+                        }
+                    }
                 } else {
-                    let start_pos = self.current_token_with_position().unwrap().position.clone();
-                    let expr = self.parse_expression()?;
-                    Ok(Statement {
-                        kind: StatementKind::ExpressionStatement(expr),
-                        pos: start_pos,
-                    })
+                    Ok(Statement { kind: StatementKind::ExpressionStatement(expr), pos: start_pos })
                 }
             },
             _ => {
@@ -834,53 +851,6 @@ impl Parser {
         Ok(params)
     }
 
-    /// Parse assigment
-    fn parse_assignment(&mut self) -> Result<Statement, ()> {
-        let start_pos = self.current_token_with_position().unwrap().position.clone();
-        let name = match self.current_token_with_position() {
-            Some(twp) => match &twp.token {
-                Token::Identifier(name) => {
-                    let name = name.clone();
-                    self.advance();
-                    name
-                }
-                _ => {
-                    self.errors.add_error(crate::ErrorReport::with_file(
-                        crate::ErrorType::ExpectedIdentifier,
-                        "Expected identifier".to_string(),
-                        self.filename.clone(),
-                        twp.position.line,
-                        twp.position.column,
-                        twp.position.offset,
-                        twp.position.length,
-                        self.extract_code_snippet(twp.position.line, twp.position.column),
-                    ));
-                    return Err(());
-                }
-            },
-            None => {
-                 let pos = self.current_token_with_position().map(|twp| twp.position.clone()).unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
-                 self.errors.add_error(crate::ErrorReport::with_file(
-                    crate::ErrorType::ExpectedIdentifier,
-                    "Expected identifier".to_string(),
-                    self.filename.clone(),
-                    pos.line,
-                    pos.column,
-                    pos.offset,
-                    pos.length,
-                    self.extract_code_snippet(pos.line, pos.column),
-                ));
-                return Err(());
-            }
-        };
-        self.expect_token(Token::Assign)?;
-        let value = self.parse_expression()?;
-        Ok(Statement {
-            kind: StatementKind::Assignment { name, value },
-            pos: start_pos,
-        })
-    }
-
     /// Parse if statement
     fn parse_if_statement(&mut self) -> Result<Statement, ()> {
         let start_pos = self.current_token_with_position().unwrap().position.clone();
@@ -1440,12 +1410,113 @@ impl Parser {
         match twp {
             Some(twp) => match &twp.token {
                 Token::StringLiteral(s) => {
-                    let value = s.clone();
+                    let original = s.clone();
                     self.advance();
-                    Ok(Expression {
-                        kind: ExpressionKind::StringLiteral(value),
-                        pos: twp.position,
-                    })
+
+                    if !original.contains("${") {
+                        return Ok(Expression { kind: ExpressionKind::StringLiteral(original), pos: twp.position });
+                    }
+
+                    let mut parts: Vec<Result<Expression, ()>> = Vec::new();
+                    let mut buf = String::new();
+                    let chars: Vec<char> = original.chars().collect();
+                    let mut i = 0;
+                    while i < chars.len() {
+                        if chars[i] == '\\' {
+                            if i + 1 < chars.len() {
+                                if chars[i + 1] == '$' {
+                                    buf.push('$');
+                                    i += 2;
+                                    continue;
+                                } else {
+                                    buf.push(chars[i + 1]);
+                                    i += 2;
+                                    continue;
+                                }
+                            } else {
+                                buf.push('\\');
+                                i += 1;
+                                continue;
+                            }
+                        }
+                        if chars[i] == '$' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                            if !buf.is_empty() {
+                                let text_expr = Expression {
+                                    kind: ExpressionKind::StringLiteral(buf.clone()),
+                                    pos: twp.position.clone(),
+                                };
+                                parts.push(Ok(text_expr));
+                                buf.clear();
+                            }
+                            i += 2;
+                            let start_expr = i;
+                            let mut found = false;
+                            while i < chars.len() {
+                                if chars[i] == '}' {
+                                    found = true;
+                                    break;
+                                }
+                                i += 1;
+                            }
+                            if !found {
+                                self.errors.add_error(crate::ErrorReport::with_file(
+                                    crate::ErrorType::SyntaxError,
+                                    "Unterminated interpolation: expected '}'".to_string(),
+                                    self.filename.clone(),
+                                    twp.position.line,
+                                    twp.position.column,
+                                    twp.position.offset,
+                                    twp.position.length,
+                                    self.extract_code_snippet(twp.position.line, twp.position.column),
+                                ));
+                                return Err(());
+                            }
+                            let inner: String = chars[start_expr..i].iter().collect();
+                            i += 1;
+
+                            let mut lexer = crate::lexer::Lexer::new(&inner, format!("{}<interp>", self.filename));
+                            let tokens = lexer.tokenize();
+                            let mut p = Parser::new(tokens, inner.clone(), format!("{}<interp>", self.filename));
+                            match p.parse_expression() {
+                                Ok(expr) => parts.push(Ok(expr)),
+                                Err(_) => {
+                                    self.errors.add_error(crate::ErrorReport::with_file(
+                                        crate::ErrorType::SyntaxError,
+                                        "Invalid expression inside interpolation".to_string(),
+                                        self.filename.clone(),
+                                        twp.position.line,
+                                        twp.position.column,
+                                        twp.position.offset,
+                                        twp.position.length,
+                                        self.extract_code_snippet(twp.position.line, twp.position.column),
+                                    ));
+                                    return Err(());
+                                }
+                            }
+                            continue;
+                        }
+                        buf.push(chars[i]);
+                        i += 1;
+                    }
+
+                    if !buf.is_empty() {
+                        let text_expr = Expression { kind: ExpressionKind::StringLiteral(buf.clone()), pos: twp.position.clone() };
+                        parts.push(Ok(text_expr));
+                    }
+
+                    let mut iter = parts.into_iter();
+                    let first = match iter.next() { Some(Ok(e)) => e, _ => {
+                        return Ok(Expression { kind: ExpressionKind::StringLiteral(String::new()), pos: twp.position });
+                    } };
+                    let mut acc = first;
+                    for part in iter {
+                        let rhs = part?;
+                        acc = Expression {
+                            kind: ExpressionKind::Binary { left: Box::new(acc), operator: BinaryOperator::Add, right: Box::new(rhs) },
+                            pos: twp.position.clone(),
+                        };
+                    }
+                    Ok(acc)
                 }
                 Token::IntLiteral(n) => {
                     let value = *n;
@@ -1577,11 +1648,6 @@ impl Parser {
     /// Get current token
     fn current_token(&self) -> Option<&Token> {
         self.tokens.get(self.position).map(|t| &t.token)
-    }
-
-    /// Get peek token
-    fn peek_token(&self) -> Option<&Token> {
-        self.tokens.get(self.position + 1).map(|t| &t.token)
     }
 
     /// Get current token with position

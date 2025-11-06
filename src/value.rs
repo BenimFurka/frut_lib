@@ -271,6 +271,7 @@ impl Value {
 pub struct RuntimeEnvironment {
     scopes: Vec<HashMap<String, Value>>,
     functions: HashMap<String, Value>,
+    struct_schemas: HashMap<String, Vec<String>>,
 }
 
 impl RuntimeEnvironment {
@@ -279,6 +280,7 @@ impl RuntimeEnvironment {
         Self {
             scopes: vec![HashMap::default()],
             functions: HashMap::default(),
+            struct_schemas: HashMap::default(),
         }
     }
 
@@ -335,5 +337,15 @@ impl RuntimeEnvironment {
             }
         }
         all_vars
+    }
+
+    /// Register a struct schema by name with its field names
+    pub fn define_schema(&mut self, name: String, fields: Vec<String>) {
+        self.struct_schemas.insert(name, fields);
+    }
+
+    /// Get a struct schema field names by name
+    pub fn get_schema(&self, name: &str) -> Option<&Vec<String>> {
+        self.struct_schemas.get(name)
     }
 }

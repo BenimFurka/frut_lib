@@ -42,22 +42,44 @@ impl SimpleInterpreter {
 
     fn interpret_statement(&mut self, stmt: &Statement) -> InterpretResult {
         match &stmt.kind {
-            StatementKind::ExpressionStatement(expr) => {
-                self.interpret_expression(expr)?;
-                Ok(Value::Void)
-            }
+            StatementKind::ExpressionStatement(expr) => self.interpret_expression(expr),
             StatementKind::VariableDeclaration { name, initializer, .. } => {
                 let value = self.interpret_expression(initializer)?;
                 self.env.define_variable(name.clone(), value);
                 Ok(Value::Void)
             }
-            StatementKind::Assignment { name, value } => {
-                let new_value = self.interpret_expression(value)?;
-                if self.env.get_variable(name).is_some() {
-                    self.env.set_variable(name, new_value).unwrap(); // set_variable returns Result<(), String>
-                    Ok(Value::Void)
-                } else {
-                    Err(format!("Cannot assign to undefined variable '{}'", name))
+            
+            StatementKind::Assignment { target, value } => {
+                match &target.kind {
+                    ExpressionKind::Variable(name) => {
+                        let rhs = self.interpret_expression(value)?;
+                        self.env.set_variable(name, rhs).map(|_| Value::Void).map_err(|e| e)
+                    }
+                    ExpressionKind::MemberAccess { object, member } => {
+                        if let ExpressionKind::Variable(var_name) = &object.kind {
+                            let current = self
+                                .env
+                                .get_variable(var_name)
+                                .cloned()
+                                .ok_or_else(|| format!("Undefined variable: {}", var_name))?;
+
+                            match current {
+                                Value::Struct { type_name, mut fields } => {
+                                    let rhs = self.interpret_expression(value)?;
+                                    fields.insert(member.clone(), rhs);
+                                    self.env.set_variable(
+                                        var_name,
+                                        Value::Struct { type_name, fields },
+                                    )?;
+                                    Ok(Value::Void)
+                                }
+                                other => Err(format!("Cannot assign to member on non-struct value: {:?}", other)),
+                            }
+                        } else {
+                            Err("Assignment target must be a variable or variable's field".to_string())
+                        }
+                    }
+                    _ => Err("Invalid assignment target".to_string()),
                 }
             }
             StatementKind::Block(statements) => {
@@ -65,8 +87,7 @@ impl SimpleInterpreter {
                 let result = (|| {
                     for stmt in statements {
                         let res = self.interpret_statement(stmt)?;
-                        // Simplified example
-                        if let Value::Void = res {} else {}
+                        if let Value::Void = res {}
                     }
                     Ok(Value::Void)
                 })();

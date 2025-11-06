@@ -220,6 +220,56 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Predeclare all types, functions, and methods to allow forward references
+    fn predeclare_signatures(&mut self, statements: &[Statement]) {
+        for stmt in statements {
+            if let StatementKind::TypeDeclaration { name, fields } = &stmt.kind {
+                let mut field_map = HashMap::default();
+                for field in fields {
+                    let field_type = self.get_type_from_name(field.field_type.as_str());
+                    field_map.insert(field.name.clone(), field_type);
+                }
+                if self.environment.get_struct_type(name).is_none() {
+                    let _ = self.environment.define_struct_type(name.clone(), StructTypeInfo { name: name.clone(), fields: field_map, methods: HashMap::default() });
+                }
+            }
+        }
+
+        for stmt in statements {
+            if let StatementKind::ExtDeclaration { type_name, .. } = &stmt.kind {
+                if self.environment.get_struct_type(type_name).is_none() {
+                    let _ = self.environment.define_struct_type(type_name.clone(), StructTypeInfo { name: type_name.clone(), fields: HashMap::default(), methods: HashMap::default() });
+                }
+            }
+        }
+        
+        let mut ext_methods_to_insert: Vec<(String, String, FunctionInfo)> = Vec::new();
+        for stmt in statements {
+            if let StatementKind::ExtDeclaration { type_name, methods } = &stmt.kind {
+                for method in methods {
+                    if let StatementKind::FunctionDeclaration { name, params, return_type, .. } = &method.kind {
+                        let param_types: Vec<Type> = params.iter().map(|p| self.get_type_from_name(&p.param_type)).collect();
+                        let return_type_ty = self.get_type_from_name(return_type.as_str());
+                        ext_methods_to_insert.push((type_name.clone(), name.clone(), FunctionInfo { param_types, return_type: return_type_ty }));
+                    }
+                }
+            }
+        }
+        for (ty_name, mname, finfo) in ext_methods_to_insert {
+            if let Some(struct_info) = self.environment.get_struct_type_mut(&ty_name) {
+                struct_info.methods.insert(mname, finfo);
+            }
+        }
+        
+        for stmt in statements {
+            if let StatementKind::FunctionDeclaration { name, params, return_type, .. } = &stmt.kind {
+                let param_types: Vec<Type> = params.iter().map(|p| self.get_type_from_name(&p.param_type)).collect();
+                let return_type_ty = self.get_type_from_name(return_type.as_str());
+                let _ = self.environment.define_function(name.clone(), FunctionInfo { param_types, return_type: return_type_ty });
+            }
+        }
+    }
+
     /// Extract a code snippet from the source at the given line
     fn extract_code_snippet(&self, line: usize) -> String {
         if line == 0 {
@@ -250,6 +300,7 @@ impl SemanticAnalyzer {
 
     /// Analyze a list of statements
     pub fn analyze(&mut self, statements: &[Statement]) -> Result<(), ErrorCollection> {
+        self.predeclare_signatures(statements);
         for statement in statements {
             if let Err(error) = self.analyze_statement(statement) {
                 self.errors.add_error(error);
@@ -309,34 +360,85 @@ impl SemanticAnalyzer {
                 }
                 Ok(())
             }
-            StatementKind::Assignment { name, value } => {
-                if self.environment.get_variable(name).is_none() {
-                    return Err(self.create_error(
-                        ErrorType::UndefinedVariable(name.clone()),
-                        format!("Cannot assign to undefined variable '{}'", name),
-                        &statement.pos
-                    ));
-                }
-
-                let value_type = match self.get_expression_type_with_environment(value, &self.environment) {
-                    Ok(t) => t,
-                    Err((error_type, message, pos)) => {
-                        return Err(self.create_error(error_type, message, &pos));
+            StatementKind::Assignment { target, value } => {
+                match &target.kind {
+                    ExpressionKind::Variable(name) => {
+                        if self.environment.get_variable(name).is_none() {
+                            return Err(self.create_error(
+                                ErrorType::UndefinedVariable(name.clone()),
+                                format!("Cannot assign to undefined variable '{}'", name),
+                                &statement.pos
+                            ));
+                        }
+                        let value_type = match self.get_expression_type_with_environment(value, &self.environment) {
+                            Ok(t) => t,
+                            Err((error_type, message, pos)) => {
+                                return Err(self.create_error(error_type, message, &pos));
+                            }
+                        };
+                        let var_info = self.environment.get_variable(name).unwrap();
+                        if value_type != var_info.var_type {
+                            return Err(self.create_error(
+                                ErrorType::TypeMismatch { expected: format!("{}", var_info.var_type), found: format!("{}", value_type) },
+                                format!("Type mismatch in assignment to variable '{}'", name),
+                                &value.pos
+                            ));
+                        }
+                        Ok(())
                     }
-                };
-                let var_info = self.environment.get_variable(name).unwrap();
-
-                if value_type != var_info.var_type {
-                    return Err(self.create_error(
-                        ErrorType::TypeMismatch {
-                            expected: format!("{}", var_info.var_type),
-                            found: format!("{}", value_type),
-                        },
-                        format!("Type mismatch in assignment to variable '{}'", name),
-                        &value.pos
-                    ));
+                    ExpressionKind::MemberAccess { object, member } => {
+                        let obj_type = match self.get_expression_type_with_environment(object, &self.environment) {
+                            Ok(t) => t,
+                            Err((error_type, message, pos)) => {
+                                return Err(self.create_error(error_type, message, &pos));
+                            }
+                        };
+                        if let Type::Struct { name, fields } = obj_type {
+                            let field_ty = if let Some(ft) = fields.get(member) {
+                                ft.clone()
+                            } else if let Some(struct_info) = self.environment.get_struct_type(&name) {
+                                if let Some(ft) = struct_info.fields.get(member) { ft.clone() } else {
+                                    return Err(self.create_error(
+                                        ErrorType::TypeError,
+                                        format!("Struct '{}' has no field '{}'", name, member),
+                                        &target.pos
+                                    ));
+                                }
+                            } else {
+                                return Err(self.create_error(
+                                    ErrorType::TypeError,
+                                    format!("Unknown struct type '{}'", name),
+                                    &target.pos
+                                ));
+                            };
+                            let value_type = match self.get_expression_type_with_environment(value, &self.environment) {
+                                Ok(t) => t,
+                                Err((error_type, message, pos)) => {
+                                    return Err(self.create_error(error_type, message, &pos));
+                                }
+                            };
+                            if value_type != field_ty {
+                                return Err(self.create_error(
+                                    ErrorType::TypeMismatch { expected: field_ty.to_string(), found: value_type.to_string() },
+                                    format!("Type mismatch in assignment to field '{}.{}'", name, member),
+                                    &value.pos
+                                ));
+                            }
+                            Ok(())
+                        } else {
+                            Err(self.create_error(
+                                ErrorType::TypeError,
+                                "Cannot assign to member of non-struct".to_string(),
+                                &target.pos,
+                            ))
+                        }
+                    }
+                    _ => Err(self.create_error(
+                        ErrorType::SyntaxError,
+                        "Invalid assignment target".to_string(),
+                        &target.pos,
+                    )),
                 }
-                Ok(())
             }
             StatementKind::IfStatement { condition, then_branch, elif_branches, else_branch } => {
                 let condition_type = match self.get_expression_type_with_environment(condition, &self.environment) {
@@ -458,27 +560,12 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             StatementKind::FunctionDeclaration {
-                name,
+                name: _,
                 params,
                 return_type,
                 body,
             } => {
-                let param_types: Vec<Type> = params
-                    .iter()
-                    .map(|p| self.get_type_from_name(p.param_type.as_str()))
-                    .collect();
                 let return_type_ty = self.get_type_from_name(return_type.as_str());
-                let func_info = FunctionInfo {
-                    param_types: param_types.clone(),
-                    return_type: return_type_ty.clone(),
-                };
-                
-                if let Err((error_type, message)) = self
-                    .environment
-                    .define_function(name.clone(), func_info)
-                {
-                    return Err(self.create_error(error_type, message, &statement.pos));
-                }
 
                 self.environment.enter_scope();
                 
@@ -558,36 +645,25 @@ impl SemanticAnalyzer {
                     let field_type = self.get_type_from_name(field.field_type.as_str());
                     field_map.insert(field.name.clone(), field_type);
                 }
-                
-                let struct_info = StructTypeInfo {
-                    name: name.clone(),
-                    fields: field_map,
-                    methods: HashMap::default(),
-                };
-                
-                if let Err((err, msg)) = self.environment.define_struct_type(name.clone(), struct_info) {
-                    return Err(self.create_error(err, msg, &statement.pos));
+                if let Some(existing) = self.environment.get_struct_type_mut(name) {
+                    existing.fields = field_map;
+                    Ok(())
+                } else {
+                    let struct_info = StructTypeInfo {
+                        name: name.clone(),
+                        fields: field_map,
+                        methods: HashMap::default(),
+                    };
+                    if let Err((err, msg)) = self.environment.define_struct_type(name.clone(), struct_info) {
+                        return Err(self.create_error(err, msg, &statement.pos));
+                    }
+                    Ok(())
                 }
-                
-                Ok(())
             }
-            StatementKind::ExtDeclaration { type_name, methods } => {
-                let mut processed_methods = Vec::new();
+            StatementKind::ExtDeclaration { type_name: _, methods } => {
                 for method in methods {
-                    if let StatementKind::FunctionDeclaration { name, params, return_type, body } = &method.kind {
-                        let param_types_strings: Vec<String> = params
-                            .iter()
-                            .map(|p| p.param_type.clone())
-                            .collect();
-                        let param_types: Vec<Type> = param_types_strings
-                            .iter()
-                            .map(|param_type| self.get_type_from_name(param_type))
-                            .collect();
+                    if let StatementKind::FunctionDeclaration { name: _, params, return_type, body } = &method.kind {
                         let return_type_ty = self.get_type_from_name(return_type.as_str());
-                        processed_methods.push((name.clone(), FunctionInfo {
-                            param_types: param_types.clone(),
-                            return_type: return_type_ty.clone(),
-                        }));
                         
                         self.environment.enter_scope();
                         
@@ -616,20 +692,6 @@ impl SemanticAnalyzer {
                         self.current_return_type = prev_return_type;
                     }
                 }
-                
-                let processed_methods_clone = processed_methods.clone();
-                if let Some(struct_info) = self.environment.get_struct_type_mut(type_name) {
-                    for (name, func_info) in processed_methods {
-                        struct_info.methods.insert(name.clone(), func_info);
-                    }
-                }
-                
-                for (name, func_info) in processed_methods_clone {
-                    if let Err((err, msg)) = self.environment.define_function(name, func_info) {
-                        return Err(self.create_error(err, msg, &crate::Position::new(self.filename.clone(), 1, 1, 0, 1)));
-                    }
-                }
-                
                 Ok(())
             }
         }
@@ -978,66 +1040,32 @@ impl SemanticAnalyzer {
                                 ))
                             }
                         } else {
-                            // TODO: i guess um
-                            let (expected_params, ret_ty): (Vec<Type>, Type) = match object_type {
-                                Type::String => match member.as_str() {
-                                    "len" => (vec![], Type::Int),
-                                    "contains" => (vec![Type::String], Type::Bool),
-                                    _ => return Err((
+                            if let Some(sig) = crate::primitives::find_method_sig(&object_type, member.as_str()) {
+                                if arguments.len() != sig.param_types.len() {
+                                    return Err((
                                         ErrorType::TypeError,
-                                        format!("Cannot call method '{}' on non-struct type '{}'", member, object_type),
-                                        callee.pos.clone(),
-                                    )),
-                                },
-                                Type::Int => match member.as_str() {
-                                    "abs" => (vec![], Type::Int),
-                                    _ => return Err((
-                                        ErrorType::TypeError,
-                                        format!("Cannot call method '{}' on non-struct type '{}'", member, object_type),
-                                        callee.pos.clone(),
-                                    )),
-                                },
-                                Type::Double => match member.as_str() {
-                                    "abs" => (vec![], Type::Double),
-                                    _ => return Err((
-                                        ErrorType::TypeError,
-                                        format!("Cannot call method '{}' on non-struct type '{}'", member, object_type),
-                                        callee.pos.clone(),
-                                    )),
-                                },
-                                Type::Bool => match member.as_str() {
-                                    "to_int" => (vec![], Type::Int),
-                                    _ => return Err((
-                                        ErrorType::TypeError,
-                                        format!("Cannot call method '{}' on non-struct type '{}'", member, object_type),
-                                        callee.pos.clone(),
-                                    )),
-                                },
-                                _ => return Err((
+                                        format!("Expected {} arguments, but got {}. {:?}", sig.param_types.len(), arguments.len(), arguments),
+                                        expr.pos.clone(),
+                                    ));
+                                }
+                                for (arg, param_ty) in arguments.iter().zip(sig.param_types.iter()) {
+                                    let arg_type = self.get_expression_type_with_environment(arg, &self.environment)?;
+                                    if arg_type != *param_ty {
+                                        return Err((
+                                            ErrorType::TypeMismatch { expected: param_ty.to_string(), found: arg_type.to_string() },
+                                            "Mismatched argument type".to_string(),
+                                            arg.pos.clone(),
+                                        ));
+                                    }
+                                }
+                                Ok(sig.return_type)
+                            } else {
+                                Err((
                                     ErrorType::TypeError,
                                     format!("Cannot call method '{}' on non-struct type '{}'", member, object_type),
                                     callee.pos.clone(),
-                                )),
-                            };
-
-                            if arguments.len() != expected_params.len() {
-                                return Err((
-                                    ErrorType::TypeError,
-                                    format!("Expected {} arguments, but got {}. {:?}", expected_params.len(), arguments.len(), arguments),
-                                    expr.pos.clone(),
-                                ));
+                                ))
                             }
-                            for (arg, param_ty) in arguments.iter().zip(expected_params.iter()) {
-                                let arg_type = self.get_expression_type_with_environment(arg, &self.environment)?;
-                                if &arg_type != param_ty {
-                                    return Err((
-                                        ErrorType::TypeMismatch { expected: param_ty.to_string(), found: arg_type.to_string() },
-                                        "Mismatched argument type".to_string(),
-                                        arg.pos.clone(),
-                                    ));
-                                }
-                            }
-                            Ok(ret_ty)
                         }
                     }
                 } else {
@@ -1094,33 +1122,48 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::StructLiteral { type_name, fields } => {
                 if let Some(struct_info) = self.environment.get_struct_type(type_name) {
+                    let declared_fields = &struct_info.fields;
+                    let mut all_match = true;
                     for (field_name, field_expr) in fields {
-                        if !struct_info.fields.contains_key(field_name) {
-                            return Err((
-                                ErrorType::TypeError,
-                                format!("Struct '{}' has no field named '{}'", type_name, field_name),
-                                field_expr.pos.clone(),
-                            ));
+                        if !declared_fields.contains_key(field_name) {
+                            all_match = false;
+                            break;
                         }
-                        
-                        let field_type = &struct_info.fields[field_name];
+                        let field_type = &declared_fields[field_name];
                         let expr_type = self.get_expression_type_with_environment(field_expr, &self.environment)?;
                         if &expr_type != field_type {
                             return Err((
-                                ErrorType::TypeMismatch {
-                                    expected: field_type.to_string(),
-                                    found: expr_type.to_string(),
-                                },
+                                ErrorType::TypeMismatch { expected: field_type.to_string(), found: expr_type.to_string() },
                                 format!("Expected type '{}' for field '{}', but got '{}'", field_type, field_name, expr_type),
                                 field_expr.pos.clone(),
                             ));
                         }
                     }
-                    
-                    Ok(Type::Struct {
-                        name: struct_info.name.clone(),
-                        fields: struct_info.fields.clone(),
-                    })
+                    if all_match {
+                        return Ok(Type::Struct { name: struct_info.name.clone(), fields: declared_fields.clone() });
+                    }
+                    if fields.len() == declared_fields.len() {
+                        let mut provided: Vec<(&String, &Expression)> = fields.iter().map(|(n,e)| (n,e)).collect();
+                        provided.sort_by(|a,b| a.0.cmp(b.0));
+                        let mut decl_names: Vec<(&String, &Type)> = declared_fields.iter().collect();
+                        decl_names.sort_by(|a,b| a.0.cmp(b.0));
+                        for ((_, expr), (_, ty)) in provided.iter().zip(decl_names.iter()) {
+                            let expr_ty = self.get_expression_type_with_environment(expr, &self.environment)?;
+                            if &expr_ty != *ty {
+                                return Err((
+                                    ErrorType::TypeMismatch { expected: ty.to_string(), found: expr_ty.to_string() },
+                                    "Mismatched field type in positional struct initialization".to_string(),
+                                    expr.pos.clone(),
+                                ));
+                            }
+                        }
+                        return Ok(Type::Struct { name: struct_info.name.clone(), fields: declared_fields.clone() });
+                    }
+                    Err((
+                        ErrorType::TypeError,
+                        format!("Struct '{}' fields do not match", type_name),
+                        expr.pos.clone(),
+                    ))
                 } else {
                     Err((
                         ErrorType::TypeError,

@@ -26,6 +26,7 @@ pub mod parser;
 pub mod semantic;
 pub mod types;
 pub mod value;
+pub mod primitives;
 
 // Core types and functions
 pub use ast::*;
@@ -35,6 +36,7 @@ pub use parser::*;
 pub use semantic::*;
 pub use types::*;
 pub use value::*;
+pub use primitives::*;
 use crate::alloc::*;
 
 #[cfg(not(feature = "std"))]

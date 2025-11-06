@@ -327,7 +327,7 @@ pub enum StatementKind {
     },
     /// Variable assignment: `name = value`
     Assignment {
-        name: String,
+        target: Expression,
         value: Expression,
     },
     /// If statement: `if condition { ... } [elif ...] [else ...]`
@@ -380,8 +380,8 @@ impl fmt::Display for Statement {
             StatementKind::VariableDeclaration { name, var_type, initializer } => {
                 write!(f, "var {}: {} = {}", name, var_type, initializer)
             }
-            StatementKind::Assignment { name, value } => {
-                write!(f, "{} = {}", name, value)
+            StatementKind::Assignment { target, value } => {
+                write!(f, "{} = {}", target, value)
             }
             StatementKind::IfStatement { condition, then_branch: _, elif_branches, else_branch: _ } => {
                 write!(f, "if {} {{ ... }}", condition)?;
