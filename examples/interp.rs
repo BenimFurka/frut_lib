@@ -1,6 +1,6 @@
 use frut_lib::ast::{Expression, ExpressionKind, Statement, StatementKind};
 use frut_lib::value::{RuntimeEnvironment, Value};
-use frut_lib::{analyze_project, parse_files, File as FrutFile, HashMap};
+use frut_lib::{analyze_module, parse_files, File as FrutFile, HashMap};
 
 // Result
 type InterpretResult = Result<Value, String>;
@@ -23,7 +23,7 @@ impl SimpleInterpreter {
                     .map(|arg| arg.to_string())
                     .collect::<Vec<_>>()
                     .join("");
-                println!("{}", output);
+                println!("{output}");
                 Ok(Value::Void)
             }),
         );
@@ -33,9 +33,7 @@ impl SimpleInterpreter {
 
     fn interpret(&mut self, statements: &[Statement]) -> Result<(), String> {
         for statement in statements {
-            if let InterpretResult::Err(e) = self.interpret_statement(statement) {
-                return Err(e);
-            }
+            self.interpret_statement(statement)?;
         }
         Ok(())
     }
@@ -43,45 +41,48 @@ impl SimpleInterpreter {
     fn interpret_statement(&mut self, stmt: &Statement) -> InterpretResult {
         match &stmt.kind {
             StatementKind::ExpressionStatement(expr) => self.interpret_expression(expr),
-            StatementKind::VariableDeclaration { name, initializer, .. } => {
+            StatementKind::VariableDeclaration {
+                name, initializer, ..
+            } => {
                 let value = self.interpret_expression(initializer)?;
                 self.env.define_variable(name.clone(), value);
                 Ok(Value::Void)
             }
-            
-            StatementKind::Assignment { target, value } => {
-                match &target.kind {
-                    ExpressionKind::Variable(name) => {
-                        let rhs = self.interpret_expression(value)?;
-                        self.env.set_variable(name, rhs).map(|_| Value::Void).map_err(|e| e)
-                    }
-                    ExpressionKind::MemberAccess { object, member } => {
-                        if let ExpressionKind::Variable(var_name) = &object.kind {
-                            let current = self
-                                .env
-                                .get_variable(var_name)
-                                .cloned()
-                                .ok_or_else(|| format!("Undefined variable: {}", var_name))?;
 
-                            match current {
-                                Value::Struct { type_name, mut fields } => {
-                                    let rhs = self.interpret_expression(value)?;
-                                    fields.insert(member.clone(), rhs);
-                                    self.env.set_variable(
-                                        var_name,
-                                        Value::Struct { type_name, fields },
-                                    )?;
-                                    Ok(Value::Void)
-                                }
-                                other => Err(format!("Cannot assign to member on non-struct value: {:?}", other)),
-                            }
-                        } else {
-                            Err("Assignment target must be a variable or variable's field".to_string())
-                        }
-                    }
-                    _ => Err("Invalid assignment target".to_string()),
+            StatementKind::Assignment { target, value } => match &target.kind {
+                ExpressionKind::Variable(name) => {
+                    let rhs = self.interpret_expression(value)?;
+                    self.env.set_variable(name, rhs).map(|_| Value::Void)
                 }
-            }
+                ExpressionKind::MemberAccess { object, member } => {
+                    if let ExpressionKind::Variable(var_name) = &object.kind {
+                        let current = self
+                            .env
+                            .get_variable(var_name)
+                            .cloned()
+                            .ok_or_else(|| format!("Undefined variable: {var_name}"))?;
+
+                        match current {
+                            Value::Struct {
+                                type_name,
+                                mut fields,
+                            } => {
+                                let rhs = self.interpret_expression(value)?;
+                                fields.insert(member.clone(), rhs);
+                                self.env
+                                    .set_variable(var_name, Value::Struct { type_name, fields })?;
+                                Ok(Value::Void)
+                            }
+                            other => Err(format!(
+                                "Cannot assign to member on non-struct value: {other:?}"
+                            )),
+                        }
+                    } else {
+                        Err("Assignment target must be a variable or variable's field".to_string())
+                    }
+                }
+                _ => Err("Invalid assignment target".to_string()),
+            },
             StatementKind::Block(statements) => {
                 self.env.enter_scope();
                 let result = (|| {
@@ -105,13 +106,16 @@ impl SimpleInterpreter {
             ExpressionKind::StringLiteral(s) => Ok(Value::String(s.clone())),
             ExpressionKind::BoolLiteral(b) => Ok(Value::Bool(*b)),
             ExpressionKind::DoubleLiteral(n) => Ok(Value::Double(*n)),
-            ExpressionKind::Variable(name) => {
-                self.env
-                    .get_variable(name)
-                    .cloned()
-                    .ok_or_else(|| format!("Undefined variable: {}", name))
-            }
-            ExpressionKind::Binary { left, operator, right } => {
+            ExpressionKind::Variable(name) => self
+                .env
+                .get_variable(name)
+                .cloned()
+                .ok_or_else(|| format!("Undefined variable: {name}")),
+            ExpressionKind::Binary {
+                left,
+                operator,
+                right,
+            } => {
                 let l_val = self.interpret_expression(left)?;
                 let r_val = self.interpret_expression(right)?;
 
@@ -127,12 +131,14 @@ impl SimpleInterpreter {
                     Err(e) => Err(e),
                 }
             }
-            ExpressionKind::FunctionCall { callee, arguments } => {
+            ExpressionKind::FunctionCall {
+                callee, arguments, ..
+            } => {
                 if let ExpressionKind::Variable(func_name) = &callee.kind {
                     let func_val = self
                         .env
                         .get_variable(func_name)
-                        .ok_or_else(|| format!("Function '{}' is not defined", func_name))?
+                        .ok_or_else(|| format!("Function '{func_name}' is not defined"))?
                         .clone();
 
                     match func_val {
@@ -155,9 +161,12 @@ impl SimpleInterpreter {
                         }
                         Value::Function { .. } => {
                             // Simplified example
-                            Err("Calling user-defined functions is not implemented in this example".to_string())
+                            Err(
+                                "Calling user-defined functions is not implemented in this example"
+                                    .to_string(),
+                            )
                         }
-                        _ => Err(format!("'{}' is not a function", func_name)),
+                        _ => Err(format!("'{func_name}' is not a function")),
                     }
                 } else {
                     Err("Callee must be a variable name".to_string())
@@ -167,23 +176,25 @@ impl SimpleInterpreter {
             ExpressionKind::Cast { expr, target_type } => {
                 let val = self.interpret_expression(expr)?;
                 // Type cast
-                match target_type.as_str() {
+                match target_type.to_string().as_str() {
                     "int" => match val {
                         Value::Int(n) => Ok(Value::Int(n)),
                         Value::Double(n) => Ok(Value::Int(n as i64)),
                         Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
-                        Value::String(s) => s.parse::<i64>()
+                        Value::String(s) => s
+                            .parse::<i64>()
                             .map(Value::Int)
-                            .map_err(|_| format!("Cannot convert string '{}' to int", s)),
-                        _ => unreachable!("Invalid cast to int: {:?}", val),
+                            .map_err(|_| format!("Cannot convert string '{s}' to int")),
+                        _ => unreachable!("Invalid cast to int: {val:?}"),
                     },
                     "double" => match val {
                         Value::Int(n) => Ok(Value::Double(n as f64)),
                         Value::Double(n) => Ok(Value::Double(n)),
-                        Value::String(s) => s.parse::<f64>()
+                        Value::String(s) => s
+                            .parse::<f64>()
                             .map(Value::Double)
-                            .map_err(|_| format!("Cannot convert string '{}' to double", s)),
-                        _ => unreachable!("Invalid cast to double: {:?}", val),
+                            .map_err(|_| format!("Cannot convert string '{s}' to double")),
+                        _ => unreachable!("Invalid cast to double: {val:?}"),
                     },
                     "string" => match val {
                         Value::Void => Ok(Value::String("void".to_string())),
@@ -192,10 +203,15 @@ impl SimpleInterpreter {
                         Value::Bool(b) => Ok(Value::String(b.to_string())),
                         Value::String(s) => Ok(Value::String(s)),
                         Value::Function { .. } => Ok(Value::String("<function>".to_string())),
-                        Value::NativeFunction { .. } => Ok(Value::String("<native function>".to_string())),
-                        Value::Struct { type_name, fields } => {
-                            Ok(Value::String(format!("{} {{ {} fields }}", type_name, fields.len())))
+                        Value::NativeFunction { .. } => {
+                            Ok(Value::String("<native function>".to_string()))
                         }
+                        Value::Struct { type_name, fields } => Ok(Value::String(format!(
+                            "{} {{ {} fields }}",
+                            type_name,
+                            fields.len()
+                        ))),
+                        other => Ok(Value::String(format!("{other}"))),
                     },
                     "bool" => match val {
                         Value::Void => Ok(Value::Bool(false)),
@@ -203,10 +219,16 @@ impl SimpleInterpreter {
                         Value::Double(n) => Ok(Value::Bool(n != 0.0)),
                         Value::Bool(b) => Ok(Value::Bool(b)),
                         Value::String(s) => Ok(Value::Bool(!s.is_empty())),
-                        Value::Function { .. } | Value::NativeFunction { .. } => Ok(Value::Bool(true)),
+                        Value::Function { .. } | Value::NativeFunction { .. } => {
+                            Ok(Value::Bool(true))
+                        }
                         Value::Struct { .. } => Ok(Value::Bool(true)),
+                        Value::Enum { .. }
+                        | Value::Tuple(_)
+                        | Value::Array { .. }
+                        | Value::Bytes(_) => Ok(Value::Bool(true)),
                     },
-                    _ => unreachable!("Unknown target type '{}' for cast", target_type),
+                    _ => unreachable!("Unknown target type '{target_type}' for cast"),
                 }
             }
 
@@ -227,10 +249,32 @@ impl SimpleInterpreter {
                     if let Some(value) = fields.get(member) {
                         Ok(value.clone())
                     } else {
-                        Err(format!("Struct has no field '{}'", member))
+                        Err(format!("Struct has no field '{member}'"))
                     }
                 } else {
                     Err("Member access can only be performed on structs".to_string())
+                }
+            }
+            ExpressionKind::ArrayLiteral(elements) => {
+                let mut values = Vec::new();
+                for el in elements {
+                    values.push(self.interpret_expression(el)?);
+                }
+                Ok(Value::Array {
+                    element_type: frut_lib::types::Type::Any,
+                    elements: values,
+                })
+            }
+            ExpressionKind::Index { object, index } => {
+                let obj_value = self.interpret_expression(object)?;
+                let idx_value = self.interpret_expression(index)?;
+                if let (Value::Array { elements, .. }, Value::Int(i)) = (&obj_value, &idx_value) {
+                    if *i < 0 || *i as usize >= elements.len() {
+                        return Err(format!("Index out of bounds: {i}"));
+                    }
+                    Ok(elements[*i as usize].clone())
+                } else {
+                    Err("Indexing requires an array and an integer index".to_string())
                 }
             }
         }
@@ -249,7 +293,7 @@ fn main() {
     "#;
 
     let files = vec![FrutFile {
-        path: "example.ft".to_string(),
+        name: "example".to_string(),
         code: code.to_string(),
         ast: None,
     }];
@@ -257,7 +301,7 @@ fn main() {
     let mut project = parse_files(files).project;
 
     // Analyze
-    if let Err(errors) = analyze_project(&mut project) {
+    if let Err(errors) = analyze_module(&mut project) {
         println!("Found {} errors during analysis:", errors.len());
         for error in errors.errors {
             println!("  - {}", error.message);
@@ -271,9 +315,9 @@ fn main() {
     if let Some(first_file) = project.files.first() {
         if let Some(ref ast) = first_file.ast {
             let mut interpreter = SimpleInterpreter::new();
-            match interpreter.interpret(&ast) {
+            match interpreter.interpret(ast) {
                 Ok(()) => println!("Interpretation finished successfully."),
-                Err(e) => println!("Runtime error: {}", e),
+                Err(e) => println!("Runtime error: {e}"),
             }
         }
     }

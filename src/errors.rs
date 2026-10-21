@@ -54,20 +54,22 @@ impl fmt::Display for ErrorType {
             ErrorType::InvalidNumber => write!(f, "Invalid number format"),
             ErrorType::InvalidEscapeSequence => write!(f, "Invalid escape sequence"),
             ErrorType::SyntaxError => write!(f, "Syntax error"),
-            ErrorType::ExpectedToken(token) => write!(f, "Expected token: {}", token),
+            ErrorType::ExpectedToken(token) => write!(f, "Expected token: {token}"),
             ErrorType::ExpectedExpression => write!(f, "Expected expression"),
             ErrorType::ExpectedStatement => write!(f, "Expected statement"),
             ErrorType::ExpectedType => write!(f, "Expected type"),
             ErrorType::ExpectedIdentifier => write!(f, "Expected identifier"),
             ErrorType::TypeError => write!(f, "Type error"),
             ErrorType::TypeMismatch { expected, found } => {
-                write!(f, "Type mismatch: expected {}, found {}", expected, found)
+                write!(f, "Type mismatch: expected {expected}, found {found}")
             }
             ErrorType::InvalidOperation => write!(f, "Invalid operation"),
             ErrorType::DivisionByZero => write!(f, "Division by zero"),
             ErrorType::VariableError => write!(f, "Variable error"),
-            ErrorType::UndefinedVariable(name) => write!(f, "Undefined variable: {}", name),
-            ErrorType::VariableAlreadyDefined(name) => write!(f, "Variable already defined: {}", name),
+            ErrorType::UndefinedVariable(name) => write!(f, "Undefined variable: {name}"),
+            ErrorType::VariableAlreadyDefined(name) => {
+                write!(f, "Variable already defined: {name}")
+            }
             ErrorType::InvalidVariableName => write!(f, "Invalid variable name"),
             ErrorType::RuntimeError => write!(f, "Runtime error"),
             ErrorType::IndexOutOfBounds => write!(f, "Index out of bounds"),
@@ -166,12 +168,20 @@ impl ErrorReport {
     }
 
     /// Create an error report with a simple message
-    pub fn simple(error_type: ErrorType, message: String, file: String, line: usize, column: usize, code_snippet: String) -> Self {
+    pub fn simple(
+        error_type: ErrorType,
+        message: String,
+        file: String,
+        line: usize,
+        column: usize,
+        code_snippet: String,
+    ) -> Self {
         let position = Position::new(file, line, column, 0, 0);
         Self::new(error_type, message, position, code_snippet)
     }
 
     /// Create an error report with file information
+    #[allow(clippy::too_many_arguments)]
     pub fn with_file(
         error_type: ErrorType,
         message: String,
@@ -191,7 +201,7 @@ impl ErrorReport {
 pub type Result<T> = core::result::Result<T, ErrorReport>;
 
 /// Collection of errors for batch processing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ErrorCollection {
     pub errors: Vec<ErrorReport>,
 }
@@ -225,11 +235,5 @@ impl ErrorCollection {
     /// Clear all errors
     pub fn clear(&mut self) {
         self.errors.clear();
-    }
-}
-
-impl Default for ErrorCollection {
-    fn default() -> Self {
-        Self::new()
     }
 }

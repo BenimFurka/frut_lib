@@ -5,7 +5,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::ast::{Token, TokenWithPosition, Position};
+use crate::ast::{Position, Token, TokenWithPosition};
 
 /// Lexer for tokenizing Frut source code
 pub struct Lexer {
@@ -113,6 +113,9 @@ impl Lexer {
                 if self.current_char() == Some('=') {
                     self.advance();
                     Token::Equal
+                } else if self.current_char() == Some('>') {
+                    self.advance();
+                    Token::FatArrow
                 } else {
                     Token::Assign
                 }
@@ -143,9 +146,8 @@ impl Lexer {
                     self.advance();
                     Token::LogicalOr
                 } else {
-                    // Invalid token
-                    self.advance();
-                    return None;
+                    // Single `|` - or-pattern separator in match arms.
+                    Token::Pipe
                 }
             }
             '{' => {
@@ -155,6 +157,14 @@ impl Lexer {
             '}' => {
                 self.advance();
                 Token::RBrace
+            }
+            '[' => {
+                self.advance();
+                Token::LBracket
+            }
+            ']' => {
+                self.advance();
+                Token::RBracket
             }
             ';' => {
                 self.advance();
@@ -190,21 +200,108 @@ impl Lexer {
         };
 
         let length = self.position - current_pos;
-        let position = Position::new(self.filename.clone(), current_line, current_column, current_pos, length);
+        let position = Position::new(
+            self.filename.clone(),
+            current_line,
+            current_column,
+            current_pos,
+            length,
+        );
 
         Some(TokenWithPosition::new(token, position))
     }
 
-    /// Read a string literal
+    /// Read a string literal, decoding escape sequences (`\\`, `\"`, `\n`,
+    /// `\t`, `\r`) into their actual characters
     fn read_string_literal(&mut self) -> Token {
         self.advance();
 
-        let start = self.position;
+        let mut literal = String::new();
         while self.position < self.input.len() && self.input[self.position] != '"' {
-            if self.input[self.position] == '\\' {
+            let c = self.input[self.position];
+
+            if c == '$'
+                && self.position + 1 < self.input.len()
+                && self.input[self.position + 1] == '{'
+            {
+                literal.push('$');
+                literal.push('{');
                 self.advance();
+                self.advance();
+
+                let mut depth: i32 = 0;
+                let mut in_string = false;
+                while self.position < self.input.len() {
+                    let cc = self.input[self.position];
+                    if in_string {
+                        literal.push(cc);
+                        self.advance();
+                        if cc == '\\' && self.position < self.input.len() {
+                            literal.push(self.input[self.position]);
+                            self.advance();
+                        } else if cc == '"' {
+                            in_string = false;
+                        }
+                        continue;
+                    }
+                    match cc {
+                        '"' => {
+                            in_string = true;
+                            literal.push(cc);
+                            self.advance();
+                        }
+                        '(' | '[' => {
+                            depth += 1;
+                            literal.push(cc);
+                            self.advance();
+                        }
+                        ')' | ']' => {
+                            depth -= 1;
+                            literal.push(cc);
+                            self.advance();
+                        }
+                        '}' if depth == 0 => {
+                            literal.push(cc);
+                            self.advance();
+                            break;
+                        }
+                        '\\' if self.position + 1 < self.input.len()
+                            && self.input[self.position + 1] == '$' =>
+                        {
+                            literal.push(cc);
+                            literal.push(self.input[self.position + 1]);
+                            self.advance();
+                            self.advance();
+                        }
+                        _ => {
+                            literal.push(cc);
+                            self.advance();
+                        }
+                    }
+                }
+                continue;
             }
-            if self.position < self.input.len() {
+
+            if c == '\\' {
+                self.advance();
+                if self.position >= self.input.len() {
+                    return Token::EOF;
+                }
+                let escaped = self.input[self.position];
+                self.advance();
+                match escaped {
+                    'n' => literal.push('\n'),
+                    't' => literal.push('\t'),
+                    'r' => literal.push('\r'),
+                    '\\' => literal.push('\\'),
+                    '"' => literal.push('"'),
+                    other => {
+                        literal.push('\\');
+                        literal.push(other);
+                    }
+                }
+            } else {
+                literal.push(c);
                 self.advance();
             }
         }
@@ -213,20 +310,39 @@ impl Lexer {
             return Token::EOF;
         }
 
-        let end = self.position;
         self.advance();
 
-        let literal: String = self.input[start..end].iter().collect();
         Token::StringLiteral(literal)
     }
 
-    /// Read a number literal
+    /// Read a number literal (decimal or hex `0x...`)
     fn read_number_literal(&mut self) -> Token {
         let start = self.position;
+
+        // Hex literal: 0x / 0X + hex digits → IntLiteral
+        if self.input[self.position] == '0'
+            && self.position + 1 < self.input.len()
+            && (self.input[self.position + 1] == 'x' || self.input[self.position + 1] == 'X')
+        {
+            self.advance(); // '0'
+            self.advance(); // 'x'
+            let digits_start = self.position;
+            while self.position < self.input.len() && self.input[self.position].is_ascii_hexdigit()
+            {
+                self.advance();
+            }
+            let digits: String = self.input[digits_start..self.position].iter().collect();
+            return match i64::from_str_radix(&digits, 16) {
+                Ok(n) => Token::IntLiteral(n),
+                Err(_) => Token::EOF, // Invalid hex literal
+            };
+        }
+
         let mut is_float = false;
 
-        while self.position < self.input.len() &&
-              (self.input[self.position].is_ascii_digit() || self.input[self.position] == '.') {
+        while self.position < self.input.len()
+            && (self.input[self.position].is_ascii_digit() || self.input[self.position] == '.')
+        {
             if self.input[self.position] == '.' {
                 if is_float {
                     break;
@@ -256,8 +372,10 @@ impl Lexer {
     fn read_identifier_or_keyword(&mut self) -> Token {
         let start = self.position;
 
-        while self.position < self.input.len() &&
-              (self.input[self.position].is_ascii_alphanumeric() || self.input[self.position] == '_') {
+        while self.position < self.input.len()
+            && (self.input[self.position].is_ascii_alphanumeric()
+                || self.input[self.position] == '_')
+        {
             self.advance();
         }
 
@@ -274,15 +392,20 @@ impl Lexer {
             "func" => Token::Func,
             "return" => Token::Return,
             "while" => Token::While,
-            "import" => Token::Import,
+            "break" => Token::Break,
+            "as" => Token::As,
             "type" => Token::Type,
             "ext" => Token::Ext,
+            "import" => Token::Import,
+            "foreign" => Token::Foreign,
+            "enum" => Token::Enum,
+            "interface" => Token::Interface,
+            "match" => Token::Match,
             "string" => Token::StringType,
             "int" => Token::IntType,
             "bool" => Token::BoolType,
             "double" => Token::DoubleType,
             "void" => Token::VoidType,
-            "as" => Token::As,
             _ => Token::Identifier(text),
         }
     }
@@ -309,7 +432,7 @@ impl Lexer {
         while self.position + 1 < self.input.len() {
             if self.input[self.position] == '*' && self.input[self.position + 1] == '/' {
                 self.advance();
-                self.advance(); 
+                self.advance();
                 return;
             }
             self.advance();
