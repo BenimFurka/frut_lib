@@ -452,6 +452,8 @@ pub struct SemanticAnalyzer<'m> {
     environment: Environment,
     errors: ErrorCollection,
     current_return_type: Option<Type>,
+    /// Generic params of the function/ext-method body being analyzed
+    current_type_params: Vec<String>,
     module: Option<ModuleOrRef<'m>>,
     in_loop: bool,
     external_depth: core::cell::RefCell<Vec<String>>,
@@ -488,6 +490,7 @@ impl<'m> SemanticAnalyzer<'m> {
             filename,
             source,
             current_return_type: None,
+            current_type_params: Vec::new(),
             expected_hint: core::cell::RefCell::new(None),
             interface_index: core::cell::RefCell::new(None),
             module: None,
@@ -507,6 +510,7 @@ impl<'m> SemanticAnalyzer<'m> {
             filename,
             source,
             current_return_type: None,
+            current_type_params: Vec::new(),
             expected_hint: core::cell::RefCell::new(None),
             interface_index: core::cell::RefCell::new(None),
             module: Some(ModuleOrRef::Owned(module)),
@@ -518,12 +522,13 @@ impl<'m> SemanticAnalyzer<'m> {
 
     /// Creates a parser with a BORROWED module tree (without a clone)
     pub fn with_module_ref(filename: String, source: String, module: &'m Module) -> Self {
-         Self {
+        Self {
             errors: ErrorCollection::new(),
             environment: Environment::new(),
             filename,
             source,
             current_return_type: None,
+            current_type_params: Vec::new(),
             expected_hint: core::cell::RefCell::new(None),
             interface_index: core::cell::RefCell::new(None),
             module: Some(ModuleOrRef::Borrowed(module)),
@@ -689,9 +694,11 @@ impl<'m> SemanticAnalyzer<'m> {
                     .map(|(mname, mparams, mret)| {
                         let param_types: Vec<Type> = mparams
                             .iter()
-                            .map(|p| self.get_type_from_expr(&p.param_type))
+                            .map(|p| {
+                                self.get_type_from_expr_with_params(&p.param_type, type_params)
+                            })
                             .collect();
-                        let return_type_ty = self.get_type_from_expr(mret);
+                        let return_type_ty = self.get_type_from_expr_with_params(mret, type_params);
                         (
                             mname.clone(),
                             FunctionInfo {
@@ -895,7 +902,10 @@ impl<'m> SemanticAnalyzer<'m> {
         let mut ext_methods_to_insert: Vec<(String, String, FunctionInfo)> = Vec::new();
         for stmt in statements {
             if let StatementKind::ExtDeclaration {
-                type_name, methods, ..
+                type_name,
+                type_params: ext_type_params,
+                methods,
+                ..
             } = &stmt.kind
             {
                 for method in methods {
@@ -908,9 +918,12 @@ impl<'m> SemanticAnalyzer<'m> {
                     {
                         let param_types: Vec<Type> = params
                             .iter()
-                            .map(|p| self.get_type_from_expr(&p.param_type))
+                            .map(|p| {
+                                self.get_type_from_expr_with_params(&p.param_type, ext_type_params)
+                            })
                             .collect();
-                        let return_type_ty = self.get_type_from_expr(return_type);
+                        let return_type_ty =
+                            self.get_type_from_expr_with_params(return_type, ext_type_params);
                         ext_methods_to_insert.push((
                             type_name.clone(),
                             name.clone(),
@@ -1071,9 +1084,7 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                         false
                     }
-                    Some(info) => {
-                        info.var_type != parsed_type
-                    }
+                    Some(info) => info.var_type != parsed_type,
                 };
                 if predeclared {
                     if let Err((error_type, message)) = self
@@ -1148,7 +1159,7 @@ impl<'m> SemanticAnalyzer<'m> {
                 if !iface_ok
                     && !array_iface_ok
                     && !open_array_ok
-                    && !Self::types_assignable(&parsed_type, &initializer_type)
+                    && !self.types_assignable(&parsed_type, &initializer_type)
                     && !Self::is_open_type(&parsed_type)
                     && !Self::is_open_type(&initializer_type)
                     && !empty_array_ok
@@ -1530,6 +1541,8 @@ impl<'m> SemanticAnalyzer<'m> {
 
                 let prev_return_type = self.current_return_type.take();
                 self.current_return_type = Some(return_type_ty);
+                let prev_type_params =
+                    core::mem::replace(&mut self.current_type_params, type_params.clone());
 
                 for stmt in body {
                     if let Err(e) = self.analyze_statement(stmt) {
@@ -1539,6 +1552,7 @@ impl<'m> SemanticAnalyzer<'m> {
 
                 self.environment.exit_scope();
                 self.current_return_type = prev_return_type;
+                self.current_type_params = prev_type_params;
 
                 Ok(())
             }
@@ -1732,14 +1746,18 @@ impl<'m> SemanticAnalyzer<'m> {
                             return_type,
                             body,
                         } => {
-                            let return_type_ty = self.get_type_from_expr(return_type);
+                            let return_type_ty =
+                                self.get_type_from_expr_with_params(return_type, type_params);
 
                             self.environment.enter_scope();
 
                             for param in params {
                                 if let Err((err, msg)) = self.environment.define_variable(
                                     param.name.clone(),
-                                    self.get_type_from_expr(&param.param_type),
+                                    self.get_type_from_expr_with_params(
+                                        &param.param_type,
+                                        type_params,
+                                    ),
                                 ) {
                                     return Err(self.create_error(err, msg, &param.pos));
                                 }
@@ -1752,6 +1770,10 @@ impl<'m> SemanticAnalyzer<'m> {
 
                             let prev_return_type = self.current_return_type.take();
                             self.current_return_type = Some(return_type_ty.clone());
+                            let prev_type_params = core::mem::replace(
+                                &mut self.current_type_params,
+                                type_params.clone(),
+                            );
 
                             for stmt in body {
                                 if let Err(e) = self.analyze_statement(stmt) {
@@ -1761,6 +1783,7 @@ impl<'m> SemanticAnalyzer<'m> {
 
                             self.environment.exit_scope();
                             self.current_return_type = prev_return_type;
+                            self.current_type_params = prev_type_params;
                         }
                         StatementKind::ForeignFunctionDeclaration {
                             name,
@@ -1772,9 +1795,12 @@ impl<'m> SemanticAnalyzer<'m> {
                             let type_name = type_name.clone();
                             let param_types: Vec<Type> = params
                                 .iter()
-                                .map(|p| self.get_type_from_expr(&p.param_type))
+                                .map(|p| {
+                                    self.get_type_from_expr_with_params(&p.param_type, type_params)
+                                })
                                 .collect();
-                            let return_type_ty = self.get_type_from_expr(return_type);
+                            let return_type_ty =
+                                self.get_type_from_expr_with_params(return_type, type_params);
                             if let Some(cell) = self.environment.get_struct_type_mut(&type_name) {
                                 alloc::rc::Rc::make_mut(cell).methods.insert(
                                     name.clone(),
@@ -2432,9 +2458,9 @@ impl<'m> SemanticAnalyzer<'m> {
         for (mname, mparams, mret) in &info.methods {
             let param_types: Vec<Type> = mparams
                 .iter()
-                .map(|p| self.get_type_from_expr(&p.param_type))
+                .map(|p| self.get_type_from_expr_with_params(&p.param_type, &info.type_params))
                 .collect();
-            let return_type = self.get_type_from_expr(mret);
+            let return_type = self.get_type_from_expr_with_params(mret, &info.type_params);
             method_map.insert(
                 mname.clone(),
                 FunctionInfo {
@@ -2674,9 +2700,78 @@ impl<'m> SemanticAnalyzer<'m> {
         self.expected_hint.borrow().clone()
     }
 
+    /// Bind the declared type params of an ext-method's owner type for a
+    /// call site
+    fn bind_method_subst(
+        &self,
+        decl_type_params: &[String],
+        receiver_args: &[Type],
+        explicit: Option<&[Type]>,
+        param_types: &[Type],
+        return_type: &Type,
+        arg_exprs: &[Expression],
+    ) -> HashMap<String, Type> {
+        let mut subst: HashMap<String, Type> = match explicit {
+            Some(args) => decl_type_params
+                .iter()
+                .cloned()
+                .zip(args.iter().cloned())
+                .collect(),
+            None => decl_type_params
+                .iter()
+                .cloned()
+                .zip(receiver_args.iter().cloned())
+                .filter(|(_, t)| !Self::is_open_type(t))
+                .collect(),
+        };
+        for (param, arg) in param_types.iter().zip(arg_exprs.iter()) {
+            if let Ok(arg_type) = self.get_expression_type_with_environment(arg, &self.environment)
+            {
+                Self::unify_param_type(param, &arg_type, &mut subst);
+            }
+        }
+        if subst.len() < decl_type_params.len() {
+            if let Some(hint) = self.hint() {
+                if !Self::type_has_vars(&hint) && hint != Type::Any {
+                    Self::unify_param_type(return_type, &hint, &mut subst);
+                }
+            }
+        }
+        subst
+    }
+
+    /// Validate explicit type args of a method call against the owner's
+    /// declared type params
+    fn explicit_method_type_args(
+        &self,
+        type_args: &[crate::ast::TypeExpr],
+        decl_type_params: &[String],
+        callee_pos: &crate::Position,
+    ) -> Result<Option<Vec<Type>>, (ErrorType, String, crate::Position)> {
+        if type_args.is_empty() {
+            return Ok(None);
+        }
+        let explicit: Vec<Type> = type_args
+            .iter()
+            .map(|t| self.get_type_from_expr_with_params(t, &self.current_type_params))
+            .collect();
+        if explicit.len() != decl_type_params.len() {
+            return Err((
+                ErrorType::TypeError,
+                format!(
+                    "Method expects {} type argument(s), but got {}",
+                    decl_type_params.len(),
+                    explicit.len()
+                ),
+                callee_pos.clone(),
+            ));
+        }
+        Ok(Some(explicit))
+    }
+
     /// Whether a value of type `actual` can be assigned to a slot of type
-    /// `expected`.
-    fn types_assignable(expected: &Type, actual: &Type) -> bool {
+    /// `expected`
+    fn types_assignable(&self, expected: &Type, actual: &Type) -> bool {
         if expected == actual {
             return true;
         }
@@ -2704,14 +2799,39 @@ impl<'m> SemanticAnalyzer<'m> {
                     type_args: a2,
                     ..
                 },
-            ) => n1 == n2 && (a1.is_empty() || a2.is_empty()),
+            ) => {
+                n1 == n2
+                    && (a1.is_empty() || a2.is_empty() || self.type_args_pair_assignable(a1, a2))
+            }
             _ => false,
         }
+    }
+
+    /// Pairwise assignability of generic type arguments
+    fn type_args_pair_assignable(&self, a1: &[Type], a2: &[Type]) -> bool {
+        a1.len() == a2.len()
+            && a1.iter().zip(a2.iter()).all(|(x, y)| {
+                x == y
+                    || self.is_ctx_open(x)
+                    || self.is_ctx_open(y)
+                    || self.types_assignable(x, y)
+                    || self.types_assignable(y, x)
+            })
     }
 
     /// Whether the type is "open" - accepts any concrete type in checks
     fn is_open_type(t: &Type) -> bool {
         matches!(t, Type::Any | Type::TypeVar { .. })
+    }
+
+    /// Like [`Self::is_open_type`], but a `TypeVar` is open only if it is a
+    /// generic param of the body being analyzed
+    fn is_ctx_open(&self, t: &Type) -> bool {
+        match t {
+            Type::Any => true,
+            Type::TypeVar { name, .. } => self.current_type_params.iter().any(|p| p == name),
+            _ => false,
+        }
     }
 
     /// Signature of an ext method as seen from *outside* the receiver
@@ -2760,11 +2880,10 @@ impl<'m> SemanticAnalyzer<'m> {
                 .environment
                 .get_struct_type(name)
                 .map(|s| s.methods.clone()),
-            Type::Enum { name, .. } => {
-                self.environment
-                    .get_enum_type(name)
-                    .map(|e| e.methods.clone())
-            }
+            Type::Enum { name, .. } => self
+                .environment
+                .get_enum_type(name)
+                .map(|e| e.methods.clone()),
             _ => None,
         };
         if let Some(methods) = m {
@@ -2809,6 +2928,9 @@ impl<'m> SemanticAnalyzer<'m> {
         if arg_type == param_type {
             return true;
         }
+        if self.is_ctx_open(arg_type) || self.is_ctx_open(param_type) {
+            return true;
+        }
         if let Type::Interface {
             name: iface_name, ..
         } = param_type
@@ -2817,7 +2939,25 @@ impl<'m> SemanticAnalyzer<'m> {
                 return self.type_implements_interface(arg_type, &iface_info);
             }
         }
-        false
+        match (param_type, arg_type) {
+            (Type::Struct { name: n1, .. }, Type::Struct { name: n2, .. })
+            | (Type::Struct { name: n1, .. }, Type::Enum { name: n2, .. })
+            | (Type::Enum { name: n1, .. }, Type::Struct { name: n2, .. })
+            | (Type::Enum { name: n1, .. }, Type::Enum { name: n2, .. }) => {
+                n1 == n2 && self.types_assignable(param_type, arg_type)
+            }
+            (
+                Type::Array {
+                    element_type: p1,
+                    len: l1,
+                },
+                Type::Array {
+                    element_type: p2,
+                    len: l2,
+                },
+            ) => l1 == l2 && self.argument_matches_param(p2, p1),
+            _ => false,
+        }
     }
 
     /// Whether the type `ty` implements the interface `iface`
@@ -3134,16 +3274,6 @@ impl<'m> SemanticAnalyzer<'m> {
                 arguments,
                 type_args,
             } => {
-                if !type_args.is_empty() {
-                    if let ExpressionKind::MemberAccess { member, .. } = &callee.kind {
-                        return Err((
-                            ErrorType::TypeError,
-                            format!(
-                                "Explicit type arguments are not supported for method '{member}' yet"),
-                            callee.pos.clone(),
-                        ));
-                    }
-                }
                 if let ExpressionKind::MemberAccess { object, member } = &callee.kind {
                     let object_type =
                         self.get_expression_type_with_environment(object, &self.environment)?;
@@ -3202,7 +3332,18 @@ impl<'m> SemanticAnalyzer<'m> {
                                     let type_args: Vec<Type> = enum_info
                                         .type_params
                                         .iter()
-                                        .map(|p| subst.get(p).cloned().unwrap_or(Type::Any))
+                                        .map(|p| {
+                                            subst.get(p).cloned().unwrap_or_else(|| {
+                                                if self.current_type_params.contains(p) {
+                                                    Type::TypeVar {
+                                                        name: p.clone(),
+                                                        bound: None,
+                                                    }
+                                                } else {
+                                                    Type::Any
+                                                }
+                                            })
+                                        })
                                         .collect();
                                     let applied =
                                         self.apply_type_args(object_type.clone(), &type_args);
@@ -3300,8 +3441,30 @@ impl<'m> SemanticAnalyzer<'m> {
                                         method_info.param_types.iter().collect()
                                     };
 
+                                    let explicit = self.explicit_method_type_args(
+                                        type_args,
+                                        &struct_info.type_params,
+                                        &callee.pos,
+                                    )?;
+                                    let sig_params: Vec<Type> =
+                                        param_types_to_check.iter().map(|p| (*p).clone()).collect();
+                                    let subst = self.bind_method_subst(
+                                        &struct_info.type_params,
+                                        &[],
+                                        explicit.as_deref(),
+                                        &sig_params,
+                                        &method_info.return_type,
+                                        arguments,
+                                    );
+                                    let param_types_to_check: Vec<Type> = sig_params
+                                        .iter()
+                                        .map(|p| p.substitute_type_vars(&subst))
+                                        .collect();
+                                    let return_type =
+                                        method_info.return_type.substitute_type_vars(&subst);
+
                                     for (arg, param_type) in
-                                        arguments.iter().zip(param_types_to_check)
+                                        arguments.iter().zip(param_types_to_check.iter())
                                     {
                                         let arg_type = self.get_expression_type_with_environment(
                                             arg,
@@ -3319,7 +3482,7 @@ impl<'m> SemanticAnalyzer<'m> {
                                         }
                                     }
 
-                                    Ok(method_info.return_type.clone())
+                                    Ok(return_type)
                                 } else {
                                     Err((
                                         ErrorType::TypeError,
@@ -3344,21 +3507,45 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     } else {
                         let instance_methods = match &object_type {
-                            Type::Struct { name, .. } => self
+                            Type::Struct {
+                                name,
+                                type_args: receiver_args,
+                                ..
+                            } => self
                                 .environment
                                 .get_struct_type(name)
-                                .map(|s| (name.clone(), s.methods.clone()))
-                                .filter(|(_, methods)| methods.contains_key(member)),
-                            Type::Enum { name, .. } => self
+                                .map(|s| {
+                                    (
+                                        name.clone(),
+                                        receiver_args.clone(),
+                                        s.type_params.clone(),
+                                        s.methods.clone(),
+                                    )
+                                })
+                                .filter(|(_, _, _, methods)| methods.contains_key(member)),
+                            Type::Enum {
+                                name,
+                                type_args: receiver_args,
+                                ..
+                            } => self
                                 .environment
                                 .get_enum_type(name)
-                                .map(|e| (name.clone(), e.methods.clone()))
-                                .filter(|(_, methods)| methods.contains_key(member)),
+                                .map(|e| {
+                                    (
+                                        name.clone(),
+                                        receiver_args.clone(),
+                                        e.type_params.clone(),
+                                        e.methods.clone(),
+                                    )
+                                })
+                                .filter(|(_, _, _, methods)| methods.contains_key(member)),
                             _ => None,
                         };
-                        if let Some((type_name, methods)) = instance_methods {
+                        if let Some((type_name, receiver_args, decl_params, methods)) =
+                            instance_methods
+                        {
                             let method_info = methods.get(member).expect("filtered above");
-                            let (param_types, return_type) =
+                            let (mut param_types, mut return_type) =
                                 Self::method_signature_without_self(method_info, &type_name);
                             if arguments.len() != param_types.len() {
                                 return Err((
@@ -3371,6 +3558,27 @@ impl<'m> SemanticAnalyzer<'m> {
                                     ),
                                     expr.pos.clone(),
                                 ));
+                            }
+
+                            let explicit = self.explicit_method_type_args(
+                                type_args,
+                                &decl_params,
+                                &callee.pos,
+                            )?;
+                            let subst = self.bind_method_subst(
+                                &decl_params,
+                                &receiver_args,
+                                explicit.as_deref(),
+                                &param_types,
+                                &return_type,
+                                arguments,
+                            );
+                            if !subst.is_empty() {
+                                param_types = param_types
+                                    .iter()
+                                    .map(|p| p.substitute_type_vars(&subst))
+                                    .collect();
+                                return_type = return_type.substitute_type_vars(&subst);
                             }
 
                             for (arg, param_type) in arguments.iter().zip(param_types.iter()) {
@@ -3521,7 +3729,12 @@ impl<'m> SemanticAnalyzer<'m> {
                                 } else {
                                     let explicit: Vec<Type> = type_args
                                         .iter()
-                                        .map(|t| self.get_type_from_expr(t))
+                                        .map(|t| {
+                                            self.get_type_from_expr_with_params(
+                                                t,
+                                                &self.current_type_params,
+                                            )
+                                        })
                                         .collect();
                                     if explicit.len() != func_info.type_params.len() {
                                         return Err((
@@ -3602,7 +3815,7 @@ impl<'m> SemanticAnalyzer<'m> {
                                              Type::Array { element_type: expected_el, len: l2 })
                                                 if l1 == l2 && (Self::is_open_type(expected_el) || Self::is_open_type(element_type)));
                                         if !iface_ok
-                                            && !Self::types_assignable(&param_type, &arg_type)
+                                            && !self.types_assignable(&param_type, &arg_type)
                                             && !Self::is_open_type(&param_type)
                                             && !Self::is_open_type(&arg_type)
                                             && !array_of_any_ok
@@ -3633,7 +3846,9 @@ impl<'m> SemanticAnalyzer<'m> {
                     {
                         let explicit_args: Vec<Type> = type_args
                             .iter()
-                            .map(|t| self.get_type_from_expr(t))
+                            .map(|t| {
+                                self.get_type_from_expr_with_params(t, &self.current_type_params)
+                            })
                             .collect();
                         let bound_args: Option<Vec<Type>> = if !explicit_args.is_empty() {
                             Some(explicit_args)
@@ -3708,7 +3923,7 @@ impl<'m> SemanticAnalyzer<'m> {
                                  Type::Array { element_type: expected_el, len: l2 })
                                     if l1 == l2 && (Self::is_open_type(expected_el) || Self::is_open_type(element_type)));
                             if !iface_ok
-                                && !Self::types_assignable(param_type, &arg_type)
+                                && !self.types_assignable(param_type, &arg_type)
                                 && !Self::is_open_type(param_type)
                                 && !array_of_any_ok
                                 && !self.is_valid_cast(&arg_type, param_type)
@@ -3765,7 +3980,7 @@ impl<'m> SemanticAnalyzer<'m> {
                         let field_has_vars = Self::type_has_vars(field_type);
                         if &expr_type != field_type
                             && !field_has_vars
-                            && !Self::types_assignable(field_type, &expr_type)
+                            && !self.types_assignable(field_type, &expr_type)
                             && !Self::is_open_type(field_type)
                             && !Self::is_open_type(&expr_type)
                         {
@@ -3823,7 +4038,7 @@ impl<'m> SemanticAnalyzer<'m> {
                             let expr_ty =
                                 self.get_expression_type_with_environment(expr, &self.environment)?;
                             if &expr_ty != *ty
-                                && !Self::types_assignable(ty, &expr_ty)
+                                && !self.types_assignable(ty, &expr_ty)
                                 && !Self::is_open_type(ty)
                                 && !Self::is_open_type(&expr_ty)
                             {
@@ -3896,7 +4111,13 @@ impl<'m> SemanticAnalyzer<'m> {
                     ));
                 }
 
-                if let Type::Enum { name, variants, .. } = &object_type {
+                if let Type::Enum {
+                    name,
+                    type_args,
+                    variants,
+                    ..
+                } = &object_type
+                {
                     if variants.iter().any(|v| &v.name == member) {
                         return Ok(object_type.clone());
                     }
@@ -3904,6 +4125,19 @@ impl<'m> SemanticAnalyzer<'m> {
                         if let Some(method_info) = enum_info.methods.get(member) {
                             let (param_types, return_type) =
                                 Self::method_signature_without_self(method_info, name);
+                            let subst = self.bind_method_subst(
+                                &enum_info.type_params,
+                                type_args,
+                                None,
+                                &[],
+                                &return_type,
+                                &[],
+                            );
+                            let param_types: Vec<Type> = param_types
+                                .iter()
+                                .map(|p| p.substitute_type_vars(&subst))
+                                .collect();
+                            let return_type = return_type.substitute_type_vars(&subst);
                             return Ok(Type::FunctionType {
                                 param_types,
                                 return_type: Box::new(return_type),
@@ -3914,7 +4148,12 @@ impl<'m> SemanticAnalyzer<'m> {
                     }
                 }
 
-                if let Type::Struct { name, fields, .. } = object_type {
+                if let Type::Struct {
+                    name,
+                    fields,
+                    type_args,
+                } = object_type
+                {
                     if let Some(field_type) = fields.get(member) {
                         Ok(field_type.clone())
                     } else if let Some(struct_info) = self.environment.get_struct_type(&name) {
@@ -3922,6 +4161,19 @@ impl<'m> SemanticAnalyzer<'m> {
                             let method_info = &struct_info.methods[member];
                             let (param_types, return_type) =
                                 Self::method_signature_without_self(method_info, &name);
+                            let subst = self.bind_method_subst(
+                                &struct_info.type_params,
+                                &type_args,
+                                None,
+                                &[],
+                                &return_type,
+                                &[],
+                            );
+                            let param_types: Vec<Type> = param_types
+                                .iter()
+                                .map(|p| p.substitute_type_vars(&subst))
+                                .collect();
+                            let return_type = return_type.substitute_type_vars(&subst);
                             Ok(Type::FunctionType {
                                 param_types,
                                 return_type: Box::new(return_type),
