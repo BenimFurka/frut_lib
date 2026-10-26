@@ -322,27 +322,25 @@ impl Value {
     /// Perform binary operations
     pub fn binary_op(&self, op: crate::ast::BinaryOperator, other: &Self) -> Result<Self, String> {
         match op {
-            crate::ast::BinaryOperator::Add => {
-                match (self, other) {
-                    (Value::Int(a), Value::Int(b)) => a
-                        .checked_add(*b)
-                        .map(Value::Int)
-                        .ok_or_else(|| "Integer overflow in addition".to_string()),
-                    (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
-                    (Value::Bytes(a), Value::Bytes(b)) => {
-                        let mut out = a.clone();
-                        out.extend_from_slice(b);
-                        Ok(Value::Bytes(out))
-                    }
-                    (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
-                    (Value::String(a), Value::Int(b)) => Ok(Value::String(format!("{a}{b}"))),
-                    (Value::String(a), Value::Double(b)) => Ok(Value::String(format!("{a}{b}"))),
-                    (Value::String(a), Value::Bool(b)) => Ok(Value::String(format!("{a}{b}"))),
-                    (Value::String(a), b) => Ok(Value::String(format!("{a}{b}"))),
-                    (a, Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
-                    _ => Err("Type mismatch in addition".to_string()),
+            crate::ast::BinaryOperator::Add => match (self, other) {
+                (Value::Int(a), Value::Int(b)) => a
+                    .checked_add(*b)
+                    .map(Value::Int)
+                    .ok_or_else(|| "Integer overflow in addition".to_string()),
+                (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
+                (Value::Bytes(a), Value::Bytes(b)) => {
+                    let mut out = a.clone();
+                    out.extend_from_slice(b);
+                    Ok(Value::Bytes(out))
                 }
-            }
+                (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
+                (Value::String(a), Value::Int(b)) => Ok(Value::String(format!("{a}{b}"))),
+                (Value::String(a), Value::Double(b)) => Ok(Value::String(format!("{a}{b}"))),
+                (Value::String(a), Value::Bool(b)) => Ok(Value::String(format!("{a}{b}"))),
+                (Value::String(a), b) => Ok(Value::String(format!("{a}{b}"))),
+                (a, Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
+                _ => Err("Type mismatch in addition".to_string()),
+            },
             crate::ast::BinaryOperator::Sub => match (self, other) {
                 (Value::Int(a), Value::Int(b)) => a
                     .checked_sub(*b)

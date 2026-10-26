@@ -11,7 +11,6 @@
 //! - Support for both interpretation and compilation workflows in the future
 
 #![cfg_attr(not(feature = "std"), no_std)]
-
 #![allow(clippy::result_large_err)]
 
 #[macro_use]

@@ -252,7 +252,7 @@ impl ErrorReport {
 
     /// The `E####` code prefix, e.g. `"E0017"`
     pub fn code_label(&self) -> String {
-        self.code.to_string()
+        format!("{}", self.code)
     }
 }
 
