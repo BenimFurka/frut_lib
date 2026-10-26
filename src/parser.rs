@@ -2108,6 +2108,24 @@ impl Parser {
         if let Some(token) = self.current_token() {
             if matches!(*token, Token::Plus | Token::Minus | Token::LogicalNot) {
                 let operator = UnaryOperator::from(token.clone());
+                if operator == UnaryOperator::Minus {
+                    if let Some(Token::InvalidNumber(text)) =
+                        self.tokens.get(self.position + 1).map(|t| &t.token)
+                    {
+                        if matches!(text.as_str(), "9223372036854775808" | "0x8000000000000000") {
+                            let pos = self.current_token_with_position().unwrap().position.clone();
+                            self.advance();
+                            let lit_pos =
+                                self.current_token_with_position().unwrap().position.clone();
+                            self.advance();
+                            let _ = pos;
+                            return Ok(Expression {
+                                kind: ExpressionKind::IntLiteral(i64::MIN),
+                                pos: lit_pos,
+                            });
+                        }
+                    }
+                }
                 self.advance();
                 let operand = self.parse_unary()?;
                 return Ok(Expression {
@@ -2821,6 +2839,34 @@ impl Parser {
                         kind: ExpressionKind::ArrayLiteral(elements),
                         pos,
                     })
+                }
+                Token::InvalidNumber(text) => {
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::InvalidNumber,
+                        format!("Invalid number literal '{text}' (out of range or malformed)"),
+                        self.filename.clone(),
+                        twp.position.line,
+                        twp.position.column,
+                        twp.position.offset,
+                        twp.position.length,
+                        self.extract_code_snippet(twp.position.line, twp.position.column),
+                    ));
+                    self.advance();
+                    Err(())
+                }
+                Token::UnclosedString => {
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::UnclosedString,
+                        "Unclosed string literal".to_string(),
+                        self.filename.clone(),
+                        twp.position.line,
+                        twp.position.column,
+                        twp.position.offset,
+                        twp.position.length,
+                        self.extract_code_snippet(twp.position.line, twp.position.column),
+                    ));
+                    self.advance();
+                    Err(())
                 }
                 _ => {
                     self.errors.add_error(crate::ErrorReport::with_file(

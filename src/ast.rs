@@ -117,6 +117,12 @@ pub enum Token {
     // Comments
     Comment(String),
 
+    /// A numeric literal that could not be represented
+    InvalidNumber(String),
+
+    /// A string literal that reaches end-of-file before its closing quote
+    UnclosedString,
+
     // Special
     EOF,
 }
@@ -180,6 +186,8 @@ impl fmt::Display for Token {
             Token::Colon => write!(f, ":"),
             Token::Dot => write!(f, "."),
             Token::Comment(s) => write!(f, "comment \"{s}\""),
+            Token::InvalidNumber(n) => write!(f, "invalid number literal '{n}'"),
+            Token::UnclosedString => write!(f, "unclosed string"),
             Token::EOF => write!(f, "EOF"),
         }
     }

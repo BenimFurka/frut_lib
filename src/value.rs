@@ -216,16 +216,15 @@ impl Value {
                 type_args: Vec::new(),
             },
             Value::Enum {
-                type_name, payload, ..
+                type_name,
+                variant,
+                payload,
             } => Type::Enum {
                 name: type_name.clone(),
-                variants: payload
-                    .iter()
-                    .map(|v| crate::types::EnumVariant {
-                        name: String::new(),
-                        payload_types: vec![v.get_type()],
-                    })
-                    .collect(),
+                variants: vec![crate::types::EnumVariant {
+                    name: variant.clone(),
+                    payload_types: payload.iter().map(|v| v.get_type()).collect(),
+                }],
                 type_args: Vec::new(),
             },
             Value::Tuple(elements) => Type::Tuple {
@@ -310,7 +309,10 @@ impl Value {
                 _ => Err(format!("Cannot apply unary '+' to {}", self.get_type())),
             },
             crate::ast::UnaryOperator::Minus => match self {
-                Value::Int(n) => Ok(Value::Int(-*n)),
+                Value::Int(n) => n
+                    .checked_neg()
+                    .map(Value::Int)
+                    .ok_or_else(|| "Integer overflow in unary '-'".to_string()),
                 Value::Double(n) => Ok(Value::Double(-*n)),
                 _ => Err(format!("Cannot apply unary '-' to {}", self.get_type())),
             },
@@ -322,7 +324,10 @@ impl Value {
         match op {
             crate::ast::BinaryOperator::Add => {
                 match (self, other) {
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                    (Value::Int(a), Value::Int(b)) => a
+                        .checked_add(*b)
+                        .map(Value::Int)
+                        .ok_or_else(|| "Integer overflow in addition".to_string()),
                     (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
                     (Value::Bytes(a), Value::Bytes(b)) => {
                         let mut out = a.clone();
@@ -339,12 +344,18 @@ impl Value {
                 }
             }
             crate::ast::BinaryOperator::Sub => match (self, other) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+                (Value::Int(a), Value::Int(b)) => a
+                    .checked_sub(*b)
+                    .map(Value::Int)
+                    .ok_or_else(|| "Integer overflow in subtraction".to_string()),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a - b)),
                 _ => Err("Type mismatch in subtraction".to_string()),
             },
             crate::ast::BinaryOperator::Mul => match (self, other) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+                (Value::Int(a), Value::Int(b)) => a
+                    .checked_mul(*b)
+                    .map(Value::Int)
+                    .ok_or_else(|| "Integer overflow in multiplication".to_string()),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a * b)),
                 _ => Err("Type mismatch in multiplication".to_string()),
             },
@@ -353,7 +364,9 @@ impl Value {
                     if *b == 0 {
                         Err("Division by zero".to_string())
                     } else {
-                        Ok(Value::Int(a / b))
+                        a.checked_div(*b)
+                            .map(Value::Int)
+                            .ok_or_else(|| "Integer overflow in division".to_string())
                     }
                 }
                 (Value::Double(a), Value::Double(b)) => {
@@ -370,7 +383,9 @@ impl Value {
                     if *b == 0 {
                         Err("Division by zero".to_string())
                     } else {
-                        Ok(Value::Int(a % b))
+                        a.checked_rem(*b)
+                            .map(Value::Int)
+                            .ok_or_else(|| "Integer overflow in modulo".to_string())
                     }
                 }
                 _ => Err("Modulo operation only supported for integers".to_string()),

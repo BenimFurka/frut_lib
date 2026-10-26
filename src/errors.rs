@@ -45,6 +45,13 @@ pub enum ErrorType {
     InternalError,
 }
 
+impl ErrorType {
+    /// Stable numeric code for this error type
+    pub fn code(&self) -> ErrorCode {
+        ErrorCode::from(self.clone())
+    }
+}
+
 impl fmt::Display for ErrorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -78,8 +85,9 @@ impl fmt::Display for ErrorType {
     }
 }
 
-/// Error codes for consistent error identification
-#[derive(Debug, Clone, PartialEq)]
+/// Stable numeric codes for consistent error identification
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
 pub enum ErrorCode {
     UnexpectedToken = 1,
     UnclosedString = 2,
@@ -103,6 +111,47 @@ pub enum ErrorCode {
     RuntimeError = 20,
     IndexOutOfBounds = 21,
     InternalError = 22,
+}
+
+impl ErrorCode {
+    /// Numeric value of this code (also the `#[repr(u32)]` discriminant)
+    pub const fn as_u32(self) -> u32 {
+        self as u32
+    }
+
+    /// Short, stable machine-readable name (e.g. `"UndefinedVariable"`)
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ErrorCode::UnexpectedToken => "UnexpectedToken",
+            ErrorCode::UnclosedString => "UnclosedString",
+            ErrorCode::UnclosedComment => "UnclosedComment",
+            ErrorCode::InvalidNumber => "InvalidNumber",
+            ErrorCode::InvalidEscapeSequence => "InvalidEscapeSequence",
+            ErrorCode::SyntaxError => "SyntaxError",
+            ErrorCode::ExpectedToken => "ExpectedToken",
+            ErrorCode::ExpectedExpression => "ExpectedExpression",
+            ErrorCode::ExpectedStatement => "ExpectedStatement",
+            ErrorCode::ExpectedType => "ExpectedType",
+            ErrorCode::ExpectedIdentifier => "ExpectedIdentifier",
+            ErrorCode::TypeError => "TypeError",
+            ErrorCode::TypeMismatch => "TypeMismatch",
+            ErrorCode::InvalidOperation => "InvalidOperation",
+            ErrorCode::DivisionByZero => "DivisionByZero",
+            ErrorCode::VariableError => "VariableError",
+            ErrorCode::UndefinedVariable => "UndefinedVariable",
+            ErrorCode::VariableAlreadyDefined => "VariableAlreadyDefined",
+            ErrorCode::InvalidVariableName => "InvalidVariableName",
+            ErrorCode::RuntimeError => "RuntimeError",
+            ErrorCode::IndexOutOfBounds => "IndexOutOfBounds",
+            ErrorCode::InternalError => "InternalError",
+        }
+    }
+}
+
+impl fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "E{:04}", *self as u32)
+    }
 }
 
 impl From<ErrorType> for ErrorCode {
@@ -157,7 +206,7 @@ impl ErrorReport {
         position: Position,
         code_snippet: String,
     ) -> Self {
-        let code = ErrorCode::from(error_type.clone());
+        let code = error_type.code();
         Self {
             error_type,
             message,
@@ -165,6 +214,11 @@ impl ErrorReport {
             code,
             code_snippet,
         }
+    }
+
+    /// Create an error report at an explicit [`Position`]
+    pub fn at(error_type: ErrorType, message: String, position: Position) -> Self {
+        Self::new(error_type, message, position, String::new())
     }
 
     /// Create an error report with a simple message
@@ -195,13 +249,30 @@ impl ErrorReport {
         let position = Position::new(file, line, column, offset, length);
         Self::new(error_type, message, position, code_snippet)
     }
+
+    /// The `E####` code prefix, e.g. `"E0017"`
+    pub fn code_label(&self) -> String {
+        self.code.to_string()
+    }
 }
+
+impl fmt::Display for ErrorReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] {} --> {}:{}:{}",
+            self.code, self.message, self.position.file, self.position.line, self.position.column
+        )
+    }
+}
+
+impl core::error::Error for ErrorReport {}
 
 /// Result type for parsing operations
 pub type Result<T> = core::result::Result<T, ErrorReport>;
 
 /// Collection of errors for batch processing
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ErrorCollection {
     pub errors: Vec<ErrorReport>,
 }
@@ -215,6 +286,11 @@ impl ErrorCollection {
     /// Add an error to the collection
     pub fn add_error(&mut self, error: ErrorReport) {
         self.errors.push(error);
+    }
+
+    /// Append another collection's errors, consuming it (no per-error clone)
+    pub fn extend(&mut self, other: ErrorCollection) {
+        self.errors.extend(other.errors);
     }
 
     /// Check if there are any errors
@@ -235,5 +311,13 @@ impl ErrorCollection {
     /// Clear all errors
     pub fn clear(&mut self) {
         self.errors.clear();
+    }
+}
+
+impl FromIterator<ErrorReport> for ErrorCollection {
+    fn from_iter<I: IntoIterator<Item = ErrorReport>>(iter: I) -> Self {
+        Self {
+            errors: iter.into_iter().collect(),
+        }
     }
 }

@@ -285,7 +285,7 @@ impl Lexer {
             if c == '\\' {
                 self.advance();
                 if self.position >= self.input.len() {
-                    return Token::EOF;
+                    return Token::UnclosedString;
                 }
                 let escaped = self.input[self.position];
                 self.advance();
@@ -307,7 +307,7 @@ impl Lexer {
         }
 
         if self.position >= self.input.len() {
-            return Token::EOF;
+            return Token::UnclosedString;
         }
 
         self.advance();
@@ -334,7 +334,7 @@ impl Lexer {
             let digits: String = self.input[digits_start..self.position].iter().collect();
             return match i64::from_str_radix(&digits, 16) {
                 Ok(n) => Token::IntLiteral(n),
-                Err(_) => Token::EOF, // Invalid hex literal
+                Err(_) => Token::InvalidNumber(format!("0x{digits}")),
             };
         }
 
@@ -357,13 +357,13 @@ impl Lexer {
 
         if is_float {
             match literal.parse::<f64>() {
-                Ok(n) => Token::DoubleLiteral(n),
-                Err(_) => Token::EOF, // Invalid number
+                Ok(n) if n.is_finite() => Token::DoubleLiteral(n),
+                _ => Token::InvalidNumber(literal),
             }
         } else {
             match literal.parse::<i64>() {
                 Ok(n) => Token::IntLiteral(n),
-                Err(_) => Token::EOF, // Invalid number
+                Err(_) => Token::InvalidNumber(literal),
             }
         }
     }

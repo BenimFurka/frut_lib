@@ -57,9 +57,7 @@ pub fn parse_files(mut files: Vec<File>) -> ParseProjectResult {
         if res.is_success() {
             file.ast = Some(res.statements);
         } else {
-            for e in res.errors.errors.iter() {
-                all_errors.add_error(e.clone());
-            }
+            all_errors.extend(res.errors);
             file.ast = None;
         }
     }
@@ -115,9 +113,7 @@ pub fn analyze_module(module: &mut Module) -> core::result::Result<(), ErrorColl
             let mut analyzer = SemanticAnalyzer::new(file.name.clone(), file.code.clone());
 
             if let Err(errors) = analyzer.analyze(ast) {
-                for e in errors.errors.iter() {
-                    all_errors.add_error(e.clone());
-                }
+                all_errors.extend(errors);
             }
         }
     }

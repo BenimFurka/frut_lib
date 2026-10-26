@@ -124,15 +124,15 @@ impl PartialEq for Type {
             (
                 Type::Enum {
                     name: n1,
-                    variants: v1,
                     type_args: a1,
+                    ..
                 },
                 Type::Enum {
                     name: n2,
-                    variants: v2,
                     type_args: a2,
+                    ..
                 },
-            ) => n1 == n2 && v1 == v2 && a1 == a2,
+            ) => n1 == n2 && a1 == a2,
             (
                 Type::Interface {
                     name: n1,
@@ -374,14 +374,7 @@ impl Type {
 /// Convert a `TypeExpr` to a `Type`, resolving primitive names and arrays
 pub fn type_from_expr(expr: &crate::ast::TypeExpr) -> Type {
     match expr {
-        crate::ast::TypeExpr::Named(name) => {
-            let t = Type::from(name.as_str());
-            if matches!(t, Type::Struct { .. }) {
-                Type::Any
-            } else {
-                t
-            }
-        }
+        crate::ast::TypeExpr::Named(name) => Type::from(name.as_str()),
         crate::ast::TypeExpr::Generic { name, args } => {
             let base = Type::from(name.as_str());
             let type_args: Vec<Type> = args.iter().map(type_from_expr).collect();
