@@ -412,6 +412,12 @@ impl Environment {
         None
     }
 
+    /// Check if a variable is defined in the current scope only
+    fn is_defined_in_current_scope(&self, name: &str) -> bool {
+        let current_scope = self.scopes.last().unwrap();
+        current_scope.contains_key(name)
+    }
+
     /// Update a variable's initialization status
     fn set_variable_initialized(&mut self, name: &str) -> Result<(), (ErrorType, String)> {
         for scope in self.scopes.iter_mut().rev() {
@@ -1067,24 +1073,24 @@ impl<'m> SemanticAnalyzer<'m> {
                     ));
                 }
 
-                let predeclared = match self.environment.get_variable(name) {
-                    Some(info) if info.is_initialized => {
+                let predeclared = if self.environment.is_defined_in_current_scope(name) {
+                    let info = self.environment.get_variable(name).unwrap();
+                    if info.is_initialized {
                         return Err(self.create_error(
                             ErrorType::VariableAlreadyDefined(name.clone()),
                             format!("Variable '{name}' is already defined in this scope"),
                             &statement.pos,
                         ));
                     }
-                    None => {
-                        if let Err((error_type, message)) = self
-                            .environment
-                            .define_variable(name.clone(), parsed_type.clone())
-                        {
-                            return Err(self.create_error(error_type, message, &statement.pos));
-                        }
-                        false
+                    info.var_type != parsed_type
+                } else {
+                    if let Err((error_type, message)) = self
+                        .environment
+                        .define_variable(name.clone(), parsed_type.clone())
+                    {
+                        return Err(self.create_error(error_type, message, &statement.pos));
                     }
-                    Some(info) => info.var_type != parsed_type,
+                    false
                 };
                 if predeclared {
                     if let Err((error_type, message)) = self
