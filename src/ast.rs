@@ -719,6 +719,12 @@ pub enum ExpressionKind {
     // Array literal: `[1, 2, 3]`
     ArrayLiteral(Vec<Expression>),
 
+    // Array repeat literal: `[0; 4]` -> four zeroes
+    ArrayRepeat {
+        value: Box<Expression>,
+        len: usize,
+    },
+
     // Index access: `arr[i]`
     Index {
         object: Box<Expression>,
@@ -798,6 +804,9 @@ impl fmt::Display for Expression {
                     write!(f, "{expr}")?;
                 }
                 write!(f, "]")
+            }
+            ExpressionKind::ArrayRepeat { value, len } => {
+                write!(f, "[{value}; {len}]")
             }
             ExpressionKind::Index { object, index } => {
                 write!(f, "{object}[{index}]")

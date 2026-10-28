@@ -265,6 +265,13 @@ impl SimpleInterpreter {
                     elements: values,
                 })
             }
+            ExpressionKind::ArrayRepeat { value, len } => {
+                let v = self.interpret_expression(value)?;
+                Ok(Value::Array {
+                    element_type: v.get_type(),
+                    elements: vec![v; *len],
+                })
+            }
             ExpressionKind::Index { object, index } => {
                 let obj_value = self.interpret_expression(object)?;
                 let idx_value = self.interpret_expression(index)?;

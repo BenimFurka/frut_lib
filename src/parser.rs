@@ -2406,24 +2406,83 @@ impl Parser {
         Ok(args)
     }
 
-    /// Parse array literal elements: `[1, 2, 3]` (between the brackets)
-    fn parse_array_elements(&mut self) -> Result<Vec<Expression>, ()> {
-        let mut elements = Vec::new();
+    /// Parse an array literal `[a, b, c]` or a repeat literal `[value; len]`
+    fn parse_array_literal(&mut self) -> Result<(Vec<Expression>, Option<usize>), ()> {
         if self.current_token() == Some(&Token::RBracket) {
             self.advance();
-            return Ok(elements);
+            return Ok((Vec::new(), None));
         }
 
-        loop {
-            elements.push(self.parse_expression()?);
-            if self.current_token() != Some(&Token::Comma) {
-                break;
+        let first = self.parse_expression()?;
+
+        match self.current_token() {
+            Some(Token::RBracket) => {
+                self.advance();
+                Ok((vec![first], None))
             }
-            self.advance();
+            Some(Token::Semicolon) => {
+                self.advance();
+                let len = match self.current_token() {
+                    Some(Token::IntLiteral(n)) => {
+                        let n = *n;
+                        self.advance();
+                        n
+                    }
+                    _ => {
+                        let pos = self
+                            .current_token_with_position()
+                            .map(|twp| twp.position.clone())
+                            .unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
+                        self.errors.add_error(crate::ErrorReport::with_file(
+                            crate::ErrorType::ExpectedExpression,
+                            "Expected array repeat length".to_string(),
+                            self.filename.clone(),
+                            pos.line,
+                            pos.column,
+                            pos.offset,
+                            pos.length,
+                            self.extract_code_snippet(pos.line, pos.column),
+                        ));
+                        return Err(());
+                    }
+                };
+                if len < 0 {
+                    let pos = self
+                        .current_token_with_position()
+                        .map(|twp| twp.position.clone())
+                        .unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
+                    self.errors.add_error(crate::ErrorReport::with_file(
+                        crate::ErrorType::ExpectedExpression,
+                        "Array repeat length must be non-negative".to_string(),
+                        self.filename.clone(),
+                        pos.line,
+                        pos.column,
+                        pos.offset,
+                        pos.length,
+                        self.extract_code_snippet(pos.line, pos.column),
+                    ));
+                    return Err(());
+                }
+                self.expect_token(Token::RBracket)?;
+                Ok((vec![first], Some(len as usize)))
+            }
+            Some(Token::Comma) => {
+                let mut elements = vec![first];
+                while self.current_token() == Some(&Token::Comma) {
+                    self.advance();
+                    if self.current_token() == Some(&Token::RBracket) {
+                        break;
+                    }
+                    elements.push(self.parse_expression()?);
+                }
+                self.expect_token(Token::RBracket)?;
+                Ok((elements, None))
+            }
+            _ => {
+                self.expect_token(Token::RBracket)?;
+                Ok((vec![first], None))
+            }
         }
-
-        self.expect_token(Token::RBracket)?;
-        Ok(elements)
     }
 
     /// Parse a type expression: primitive types, identifiers (user types,
@@ -2834,11 +2893,18 @@ impl Parser {
                 Token::LBracket => {
                     let pos = twp.position.clone();
                     self.advance();
-                    let elements = self.parse_array_elements()?;
-                    Ok(Expression {
-                        kind: ExpressionKind::ArrayLiteral(elements),
-                        pos,
-                    })
+                    let (elements, repeat_len) = self.parse_array_literal()?;
+                    let kind = match repeat_len {
+                        Some(len) => {
+                            let value = elements.into_iter().next().unwrap();
+                            ExpressionKind::ArrayRepeat {
+                                value: Box::new(value),
+                                len,
+                            }
+                        }
+                        None => ExpressionKind::ArrayLiteral(elements),
+                    };
+                    Ok(Expression { kind, pos })
                 }
                 Token::InvalidNumber(text) => {
                     self.errors.add_error(crate::ErrorReport::with_file(

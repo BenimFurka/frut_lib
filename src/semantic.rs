@@ -4246,6 +4246,23 @@ impl<'m> SemanticAnalyzer<'m> {
                     elements[1].pos.clone(),
                 ))
             }
+            ExpressionKind::ArrayRepeat { value, len } => {
+                let value_type =
+                    self.get_expression_type_with_environment(value, &self.environment)?;
+                let element_type = match self.hint() {
+                    Some(Type::Array { element_type, .. })
+                        if Self::is_open_type(&value_type)
+                            && !Self::is_open_type(&element_type) =>
+                    {
+                        *element_type
+                    }
+                    _ => value_type,
+                };
+                Ok(Type::Array {
+                    element_type: Box::new(element_type),
+                    len: *len,
+                })
+            }
             ExpressionKind::Index { object, index } => {
                 let object_type =
                     self.get_expression_type_with_environment(object, &self.environment)?;
