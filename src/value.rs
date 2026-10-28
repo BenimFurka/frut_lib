@@ -316,6 +316,10 @@ impl Value {
                 Value::Double(n) => Ok(Value::Double(-*n)),
                 _ => Err(format!("Cannot apply unary '-' to {}", self.get_type())),
             },
+            crate::ast::UnaryOperator::BitNot => match self {
+                Value::Int(n) => Ok(Value::Int(!n)),
+                _ => Err(format!("Cannot apply '~' operator to {}", self.get_type())),
+            },
         }
     }
 
@@ -454,6 +458,38 @@ impl Value {
             crate::ast::BinaryOperator::LogicalOr => match (self, other) {
                 (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a || *b)),
                 _ => Err("Logical OR requires boolean operands".to_string()),
+            },
+            crate::ast::BinaryOperator::BitAnd => match (self, other) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a & b)),
+                _ => Err("Bitwise AND requires integer operands".to_string()),
+            },
+            crate::ast::BinaryOperator::BitOr => match (self, other) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a | b)),
+                _ => Err("Bitwise OR requires integer operands".to_string()),
+            },
+            crate::ast::BinaryOperator::BitXor => match (self, other) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a ^ b)),
+                _ => Err("Bitwise XOR requires integer operands".to_string()),
+            },
+            crate::ast::BinaryOperator::ShiftLeft => match (self, other) {
+                (Value::Int(a), Value::Int(b)) => {
+                    if *b < 0 || *b >= 64 {
+                        Err("Shift amount out of range".to_string())
+                    } else {
+                        Ok(Value::Int(a << b))
+                    }
+                }
+                _ => Err("Shift left requires integer operands".to_string()),
+            },
+            crate::ast::BinaryOperator::ShiftRight => match (self, other) {
+                (Value::Int(a), Value::Int(b)) => {
+                    if *b < 0 || *b >= 64 {
+                        Err("Shift amount out of range".to_string())
+                    } else {
+                        Ok(Value::Int(a >> b))
+                    }
+                }
+                _ => Err("Shift right requires integer operands".to_string()),
             },
         }
     }

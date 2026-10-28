@@ -95,6 +95,9 @@ impl Lexer {
                 if self.current_char() == Some('=') {
                     self.advance();
                     Token::LessEqual
+                } else if self.current_char() == Some('<') {
+                    self.advance();
+                    Token::ShiftLeft
                 } else {
                     Token::Less
                 }
@@ -104,6 +107,9 @@ impl Lexer {
                 if self.current_char() == Some('=') {
                     self.advance();
                     Token::GreaterEqual
+                } else if self.current_char() == Some('>') {
+                    self.advance();
+                    Token::ShiftRight
                 } else {
                     Token::Greater
                 }
@@ -135,10 +141,16 @@ impl Lexer {
                     self.advance();
                     Token::LogicalAnd
                 } else {
-                    // Invalid token
-                    self.advance();
-                    return None;
+                    Token::BitAnd
                 }
+            }
+            '^' => {
+                self.advance();
+                Token::BitXor
+            }
+            '~' => {
+                self.advance();
+                Token::BitNot
             }
             '|' => {
                 self.advance();
@@ -146,7 +158,8 @@ impl Lexer {
                     self.advance();
                     Token::LogicalOr
                 } else {
-                    // Single `|` - or-pattern separator in match arms.
+                    // Single `|`: bitwise OR, or an or-pattern separator in
+                    // match arms
                     Token::Pipe
                 }
             }

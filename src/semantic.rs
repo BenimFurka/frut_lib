@@ -3159,6 +3159,20 @@ impl<'m> SemanticAnalyzer<'m> {
                             ))
                         }
                     }
+                    UnaryOperator::BitNot => {
+                        if operand_type == Type::Any || operand_type == Type::Int {
+                            Ok(Type::Int)
+                        } else {
+                            Err((
+                                ErrorType::TypeMismatch {
+                                    expected: "int".to_string(),
+                                    found: format!("{operand_type}"),
+                                },
+                                "Cannot apply '~' operator to non-integer type".to_string(),
+                                expr.pos.clone(),
+                            ))
+                        }
+                    }
                 }
             }
             ExpressionKind::Binary {
@@ -3254,6 +3268,28 @@ impl<'m> SemanticAnalyzer<'m> {
                                     found: format!("{left_type} and {right_type}"),
                                 },
                                 "Cannot perform logical operation on non-boolean types".to_string(),
+                                expr.pos.clone(),
+                            ))
+                        }
+                    }
+                    BinaryOperator::BitAnd
+                    | BinaryOperator::BitOr
+                    | BinaryOperator::BitXor
+                    | BinaryOperator::ShiftLeft
+                    | BinaryOperator::ShiftRight => {
+                        if left_type == Type::Any
+                            || right_type == Type::Any
+                            || (left_type == Type::Int && right_type == Type::Int)
+                        {
+                            Ok(Type::Int)
+                        } else {
+                            Err((
+                                ErrorType::TypeMismatch {
+                                    expected: "int and int".to_string(),
+                                    found: format!("{left_type} and {right_type}"),
+                                },
+                                "Cannot perform bitwise operation on non-integer types"
+                                    .to_string(),
                                 expr.pos.clone(),
                             ))
                         }

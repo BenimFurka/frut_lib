@@ -1621,7 +1621,7 @@ impl Parser {
     /// Parse an or-pattern: `atomic | atomic | ...` (top level of an arm)
     fn parse_or_pattern(&mut self) -> Result<crate::ast::Pattern, ()> {
         let mut alts = vec![self.parse_atomic_pattern()?];
-        while self.current_token() == Some(&Token::Pipe) {
+        while matches!(self.current_token(), Some(&Token::Pipe) | Some(&Token::BitOr)) {
             self.advance();
             alts.push(self.parse_atomic_pattern()?);
         }
@@ -1976,10 +1976,110 @@ impl Parser {
 
     /// Parse logical AND expression
     fn parse_logical_and(&mut self) -> Result<Expression, ()> {
-        let mut left = self.parse_equality()?;
+        let mut left = self.parse_bitwise_or()?;
 
         while let Some(token) = self.current_token() {
             if *token != Token::LogicalAnd {
+                break;
+            }
+            let operator = BinaryOperator::from(token.clone());
+            self.advance();
+            let right = self.parse_bitwise_or()?;
+            let pos = left.pos.clone();
+            left = Expression {
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator,
+                    right: Box::new(right),
+                },
+                pos,
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse bitwise OR expression (`|`)
+    fn parse_bitwise_or(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_bitwise_xor()?;
+
+        while let Some(token) = self.current_token() {
+            if !matches!(*token, Token::BitOr | Token::Pipe) {
+                break;
+            }
+            let operator = BinaryOperator::from(token.clone());
+            self.advance();
+            let right = self.parse_bitwise_xor()?;
+            let pos = left.pos.clone();
+            left = Expression {
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator,
+                    right: Box::new(right),
+                },
+                pos,
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse bitwise XOR expression (`^`)
+    fn parse_bitwise_xor(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_bitwise_and()?;
+
+        while let Some(token) = self.current_token() {
+            if *token != Token::BitXor {
+                break;
+            }
+            let operator = BinaryOperator::from(token.clone());
+            self.advance();
+            let right = self.parse_bitwise_and()?;
+            let pos = left.pos.clone();
+            left = Expression {
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator,
+                    right: Box::new(right),
+                },
+                pos,
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse bitwise AND expression (`&`)
+    fn parse_bitwise_and(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_shift()?;
+
+        while let Some(token) = self.current_token() {
+            if *token != Token::BitAnd {
+                break;
+            }
+            let operator = BinaryOperator::from(token.clone());
+            self.advance();
+            let right = self.parse_shift()?;
+            let pos = left.pos.clone();
+            left = Expression {
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator,
+                    right: Box::new(right),
+                },
+                pos,
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse bitwise shift expressions (`<<`, `>>`)
+    fn parse_shift(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_equality()?;
+
+        while let Some(token) = self.current_token() {
+            if !matches!(*token, Token::ShiftLeft | Token::ShiftRight) {
                 break;
             }
             let operator = BinaryOperator::from(token.clone());
@@ -2106,7 +2206,10 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expression, ()> {
         let start_pos = self.current_token_with_position().unwrap().position.clone();
         if let Some(token) = self.current_token() {
-            if matches!(*token, Token::Plus | Token::Minus | Token::LogicalNot) {
+            if matches!(
+                *token,
+                Token::Plus | Token::Minus | Token::LogicalNot | Token::BitNot
+            ) {
                 let operator = UnaryOperator::from(token.clone());
                 if operator == UnaryOperator::Minus {
                     if let Some(Token::InvalidNumber(text)) =

@@ -98,6 +98,12 @@ pub enum Token {
     LogicalAnd,   // &&
     LogicalOr,    // ||
     LogicalNot,   // !
+    BitAnd,       // &
+    BitOr,        // |
+    BitXor,       // ^
+    BitNot,       // ~
+    ShiftLeft,    // <<
+    ShiftRight,   // >>
     Assign,       // =
     FatArrow,     // =>
     Pipe,         // | (or-patterns in match)
@@ -172,6 +178,12 @@ impl fmt::Display for Token {
             Token::LogicalAnd => write!(f, "&&"),
             Token::LogicalOr => write!(f, "||"),
             Token::LogicalNot => write!(f, "!"),
+            Token::BitAnd => write!(f, "&"),
+            Token::BitOr => write!(f, "|"),
+            Token::BitXor => write!(f, "^"),
+            Token::BitNot => write!(f, "~"),
+            Token::ShiftLeft => write!(f, "<<"),
+            Token::ShiftRight => write!(f, ">>"),
             Token::Assign => write!(f, "="),
             Token::FatArrow => write!(f, "=>"),
             Token::Pipe => write!(f, "|"),
@@ -223,13 +235,21 @@ impl Token {
                 | Token::NotEqual
                 | Token::LogicalAnd
                 | Token::LogicalOr
+                | Token::BitAnd
+                | Token::BitOr
+                | Token::BitXor
+                | Token::ShiftLeft
+                | Token::ShiftRight
                 | Token::As
         )
     }
 
     /// Check if the token is a unary operator
     pub fn is_unary_operator(&self) -> bool {
-        matches!(self, Token::Plus | Token::Minus | Token::LogicalNot)
+        matches!(
+            self,
+            Token::Plus | Token::Minus | Token::LogicalNot | Token::BitNot
+        )
     }
 
     /// Check if the token is a type keyword
@@ -291,6 +311,7 @@ pub enum UnaryOperator {
     Plus,  // +
     Minus, // -
     Not,   // !
+    BitNot, // ~
 }
 
 impl fmt::Display for UnaryOperator {
@@ -299,6 +320,7 @@ impl fmt::Display for UnaryOperator {
             UnaryOperator::Plus => write!(f, "+"),
             UnaryOperator::Minus => write!(f, "-"),
             UnaryOperator::Not => write!(f, "!"),
+            UnaryOperator::BitNot => write!(f, "~"),
         }
     }
 }
@@ -324,6 +346,13 @@ pub enum BinaryOperator {
     // Logical
     LogicalAnd, // &&
     LogicalOr,  // ||
+
+    // Bitwise
+    BitAnd,  // &
+    BitOr,   // |
+    BitXor,  // ^
+    ShiftLeft,   // <<
+    ShiftRight,  // >>
 }
 
 impl fmt::Display for BinaryOperator {
@@ -342,6 +371,11 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::NotEqual => write!(f, "!="),
             BinaryOperator::LogicalAnd => write!(f, "&&"),
             BinaryOperator::LogicalOr => write!(f, "||"),
+            BinaryOperator::BitAnd => write!(f, "&"),
+            BinaryOperator::BitOr => write!(f, "|"),
+            BinaryOperator::BitXor => write!(f, "^"),
+            BinaryOperator::ShiftLeft => write!(f, "<<"),
+            BinaryOperator::ShiftRight => write!(f, ">>"),
         }
     }
 }
@@ -362,6 +396,11 @@ impl From<Token> for BinaryOperator {
             Token::NotEqual => BinaryOperator::NotEqual,
             Token::LogicalAnd => BinaryOperator::LogicalAnd,
             Token::LogicalOr => BinaryOperator::LogicalOr,
+            Token::BitAnd => BinaryOperator::BitAnd,
+            Token::BitOr | Token::Pipe => BinaryOperator::BitOr,
+            Token::BitXor => BinaryOperator::BitXor,
+            Token::ShiftLeft => BinaryOperator::ShiftLeft,
+            Token::ShiftRight => BinaryOperator::ShiftRight,
             _ => panic!("Token {token:?} is not a binary operator"),
         }
     }
@@ -373,6 +412,7 @@ impl From<Token> for UnaryOperator {
             Token::Plus => UnaryOperator::Plus,
             Token::Minus => UnaryOperator::Minus,
             Token::LogicalNot => UnaryOperator::Not,
+            Token::BitNot => UnaryOperator::BitNot,
             _ => panic!("Token {token:?} is not a unary operator"),
         }
     }
