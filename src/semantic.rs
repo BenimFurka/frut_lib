@@ -1334,6 +1334,203 @@ impl<'m> SemanticAnalyzer<'m> {
                     &target.pos,
                 )),
             },
+            StatementKind::CompoundAssignment {
+                target,
+                operator,
+                value,
+            } => match &target.kind {
+                ExpressionKind::Variable(name) => {
+                    if self.environment.get_variable(name).is_none() {
+                        return Err(self.create_error(
+                            ErrorType::UndefinedVariable(name.clone()),
+                            format!("Cannot compound assign to undefined variable '{name}'"),
+                            &statement.pos,
+                        ));
+                    }
+                    
+                    let target_type = match self.get_expression_type_with_environment(target, &self.environment) {
+                        Ok(t) => t,
+                        Err((error_type, message, pos)) => {
+                            return Err(self.create_error(error_type, message, &pos));
+                        }
+                    };
+                    
+                    let value_type =
+                        match self.get_expression_type_with_environment(value, &self.environment) {
+                            Ok(t) => t,
+                            Err((error_type, message, pos)) => {
+                                return Err(self.create_error(error_type, message, &pos));
+                            }
+                        };
+                    
+                    if target_type != value_type {
+                        return Err(self.create_error(
+                            ErrorType::TypeMismatch {
+                                expected: format!("{}", target_type),
+                                found: format!("{value_type}"),
+                            },
+                            format!("Type mismatch in compound assignment to variable '{name}'"),
+                            &value.pos,
+                        ));
+                    }
+                    
+                    match *operator {
+                        BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul 
+                        | BinaryOperator::Div | BinaryOperator::Mod => {
+                            use crate::semantic::Type;
+                            if target_type != Type::Int && target_type != Type::Double {
+                                return Err(self.create_error(
+                                    ErrorType::TypeError,
+                                    format!("Arithmetic operations require numeric types, got '{}'", target_type),
+                                    &value.pos,
+                                ));
+                            }
+                        }
+                        BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor
+                        | BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
+                            use crate::semantic::Type;
+                            if target_type != Type::Int {
+                                return Err(self.create_error(
+                                    ErrorType::TypeError,
+                                    format!("Bitwise operations require int type, got '{}'", target_type),
+                                    &value.pos,
+                                ));
+                            }
+                        }
+                        BinaryOperator::Equal | BinaryOperator::NotEqual 
+                        | BinaryOperator::Less | BinaryOperator::LessEqual
+                        | BinaryOperator::Greater | BinaryOperator::GreaterEqual 
+                        | BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
+                            // Comparison/logical operators don't make sense in compound assignment
+                            return Err(self.create_error(
+                                ErrorType::TypeError,
+                                "Comparison operators cannot be used in compound assignment".to_string(),
+                                &value.pos,
+                            ));
+                        }
+                    }
+                    
+                    Ok(())
+                }
+                ExpressionKind::MemberAccess { object, member } => {
+                    let obj_type = match self
+                        .get_expression_type_with_environment(object, &self.environment)
+                    {
+                        Ok(t) => t,
+                        Err((error_type, message, pos)) => {
+                            return Err(self.create_error(error_type, message, &pos));
+                        }
+                    };
+                    if let Type::Struct { name, fields, .. } = obj_type {
+                        let field_ty = if let Some(ft) = fields.get(member) {
+                            ft.clone()
+                        } else if let Some(struct_info) = self.environment.get_struct_type(&name) {
+                            if let Some(ft) = struct_info.fields.get(member) {
+                                ft.clone()
+                            } else {
+                                return Err(self.create_error(
+                                    ErrorType::TypeError,
+                                    format!("Struct '{name}' has no field '{member}'"),
+                                    &target.pos,
+                                ));
+                            }
+                        } else {
+                            return Err(self.create_error(
+                                ErrorType::TypeError,
+                                format!("Unknown struct type '{name}'"),
+                                &target.pos,
+                            ));
+                        };
+                        
+                        let value_type = match self
+                            .get_expression_type_with_environment(value, &self.environment)
+                        {
+                            Ok(t) => t,
+                            Err((error_type, message, pos)) => {
+                                return Err(self.create_error(error_type, message, &pos));
+                            }
+                        };
+                        
+                        if value_type != field_ty {
+                            return Err(self.create_error(
+                                ErrorType::TypeMismatch {
+                                    expected: field_ty.to_string(),
+                                    found: value_type.to_string(),
+                                },
+                                format!("Type mismatch in compound assignment to field '{name}.{member}'"),
+                                &value.pos,
+                            ));
+                        }
+                        Ok(())
+                    } else {
+                        Err(self.create_error(
+                            ErrorType::TypeError,
+                            "Cannot compound assign to member of non-struct".to_string(),
+                            &target.pos,
+                        ))
+                    }
+                }
+                ExpressionKind::Index { object, index } => {
+                    let object_type = match self
+                        .get_expression_type_with_environment(object, &self.environment)
+                    {
+                        Ok(t) => t,
+                        Err((error_type, message, pos)) => {
+                            return Err(self.create_error(error_type, message, &pos));
+                        }
+                    };
+                    let idx_type =
+                        match self.get_expression_type_with_environment(index, &self.environment) {
+                            Ok(t) => t,
+                            Err((error_type, message, pos)) => {
+                                return Err(self.create_error(error_type, message, &pos));
+                            }
+                        };
+                    if idx_type != Type::Int {
+                        return Err(self.create_error(
+                            ErrorType::TypeMismatch {
+                                expected: "int".to_string(),
+                                found: idx_type.to_string(),
+                            },
+                            "Array index must be of type int".to_string(),
+                            &index.pos,
+                        ));
+                    }
+                    let element_type = match object_type {
+                        Type::Array { element_type, .. } => *element_type,
+                        _ => {
+                            return Err(self.create_error(
+                                ErrorType::TypeError,
+                                format!("Cannot index value of type '{object_type}'"),
+                                &target.pos,
+                            ));
+                        }
+                    };
+                    let value_type =
+                        match self.get_expression_type_with_environment(value, &self.environment) {
+                            Ok(t) => t,
+                            Err((error_type, message, pos)) => {
+                                return Err(self.create_error(error_type, message, &pos));
+                            }
+                        };
+                    if value_type != element_type {
+                        return Err(self.create_error(
+                            ErrorType::TypeMismatch {
+                                expected: element_type.to_string(),
+                                found: value_type.to_string(),
+                            },
+                            "Mismatched type in array compound assignment".to_string(),
+                            &value.pos,
+                        ));
+                    }
+                    Ok(())
+                }
+                _ => Err(self.create_error(
+                    ErrorType::SyntaxError,
+                    "Invalid compound assignment target".to_string(),
+                    &target.pos,
+                )),
+            },
             StatementKind::IfStatement {
                 condition,
                 then_branch,

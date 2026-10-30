@@ -87,7 +87,72 @@ impl Parser {
             Some(Token::Identifier(_)) => {
                 let start_pos = self.current_token_with_position().unwrap().position.clone();
                 let expr = self.parse_expression()?;
-                if self.current_token() == Some(&Token::Assign) {
+                
+                if matches!(
+                    self.current_token(),
+                    Some(
+                        Token::PlusAssign
+                            | Token::MinusAssign
+                            | Token::StarAssign
+                            | Token::SlashAssign
+                            | Token::PercentAssign
+                            | Token::BitAndAssign
+                            | Token::BitOrAssign
+                            | Token::BitXorAssign
+                            | Token::ShiftLeftAssign
+                            | Token::ShiftRightAssign
+                    )
+                ) {
+                    match &expr.kind {
+                        ExpressionKind::Variable(_)
+                        | ExpressionKind::MemberAccess { .. }
+                        | ExpressionKind::Index { .. } => {
+                            let op_token = self.current_token().unwrap().clone();
+                            self.advance();
+                            
+                            let binop = match op_token {
+                                Token::PlusAssign => BinaryOperator::Add,
+                                Token::MinusAssign => BinaryOperator::Sub,
+                                Token::StarAssign => BinaryOperator::Mul,
+                                Token::SlashAssign => BinaryOperator::Div,
+                                Token::PercentAssign => BinaryOperator::Mod,
+                                Token::BitAndAssign => BinaryOperator::BitAnd,
+                                Token::BitOrAssign => BinaryOperator::BitOr,
+                                Token::BitXorAssign => BinaryOperator::BitXor,
+                                Token::ShiftLeftAssign => BinaryOperator::ShiftLeft,
+                                Token::ShiftRightAssign => BinaryOperator::ShiftRight,
+                                _ => unreachable!(),
+                            };
+                            
+                            let value = self.parse_expression()?;
+                            Ok(Statement {
+                                kind: StatementKind::CompoundAssignment {
+                                    target: expr,
+                                    operator: binop,
+                                    value,
+                                },
+                                pos: start_pos,
+                            })
+                        }
+                        _ => {
+                            let pos = self
+                                .current_token_with_position()
+                                .map(|twp| twp.position.clone())
+                                .unwrap_or_else(|| self.tokens.last().unwrap().position.clone());
+                            self.errors.add_error(crate::ErrorReport::with_file(
+                                crate::ErrorType::SyntaxError,
+                                "Invalid assignment target".to_string(),
+                                self.filename.clone(),
+                                pos.line,
+                                pos.column,
+                                pos.offset,
+                                pos.length,
+                                self.extract_code_snippet(pos.line, pos.column),
+                            ));
+                            return Err(());
+                        }
+                    }
+                } else if self.current_token() == Some(&Token::Assign) {
                     match &expr.kind {
                         ExpressionKind::Variable(_)
                         | ExpressionKind::MemberAccess { .. }
@@ -158,6 +223,7 @@ impl Parser {
                 &stmt.kind,
                 StatementKind::VariableDeclaration { .. }
                     | StatementKind::Assignment { .. }
+                    | StatementKind::CompoundAssignment { .. }
                     | StatementKind::Return { .. }
                     | StatementKind::ExpressionStatement { .. }
                     | StatementKind::ImportStatement { .. }

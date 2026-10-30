@@ -107,6 +107,18 @@ pub enum Token {
     Assign,       // =
     FatArrow,     // =>
     Pipe,         // | (or-patterns in match)
+    
+    // Compound assignment operators
+    PlusAssign,      // +=
+    MinusAssign,     // -=
+    StarAssign,      // *=
+    SlashAssign,     // /=
+    PercentAssign,   // %=
+    BitAndAssign,    // &=
+    BitOrAssign,     // |=
+    BitXorAssign,    // ^=
+    ShiftLeftAssign, // <<=
+    ShiftRightAssign,// >>=
 
     // Brackets and separators
     LBrace,    // {
@@ -187,6 +199,16 @@ impl fmt::Display for Token {
             Token::Assign => write!(f, "="),
             Token::FatArrow => write!(f, "=>"),
             Token::Pipe => write!(f, "|"),
+            Token::PlusAssign => write!(f, "+="),
+            Token::MinusAssign => write!(f, "-="),
+            Token::StarAssign => write!(f, "*="),
+            Token::SlashAssign => write!(f, "/="),
+            Token::PercentAssign => write!(f, "%="),
+            Token::BitAndAssign => write!(f, "&="),
+            Token::BitOrAssign => write!(f, "|="),
+            Token::BitXorAssign => write!(f, "^="),
+            Token::ShiftLeftAssign => write!(f, "<<="),
+            Token::ShiftRightAssign => write!(f, ">>="),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
             Token::LBracket => write!(f, "["),
@@ -438,6 +460,12 @@ pub enum StatementKind {
         target: Expression,
         value: Expression,
     },
+    /// Compound assignment: `name += value`
+    CompoundAssignment {
+        target: Expression,
+        operator: BinaryOperator,
+        value: Expression,
+    },
     /// If statement: `if condition { ... } [elif ...] [else ...]`
     IfStatement {
         condition: Expression,
@@ -548,6 +576,13 @@ impl fmt::Display for Statement {
             }
             StatementKind::Assignment { target, value } => {
                 write!(f, "{target} = {value}")
+            }
+            StatementKind::CompoundAssignment {
+                target,
+                operator,
+                value,
+            } => {
+                write!(f, "{target} {operator}= {value}")
             }
             StatementKind::IfStatement {
                 condition,

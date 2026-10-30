@@ -55,19 +55,39 @@ impl Lexer {
         let token = match self.input[self.position] {
             '+' => {
                 self.advance();
-                Token::Plus
+                if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::PlusAssign
+                } else {
+                    Token::Plus
+                }
             }
             '-' => {
                 self.advance();
-                Token::Minus
+                if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::MinusAssign
+                } else {
+                    Token::Minus
+                }
             }
             '*' => {
                 self.advance();
-                Token::Star
+                if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::StarAssign
+                } else {
+                    Token::Star
+                }
             }
             '/' => {
                 if self.position + 1 < self.input.len() {
                     match self.input[self.position + 1] {
+                        '=' => {
+                            self.advance();
+                            self.advance();
+                            Token::SlashAssign
+                        }
                         '/' => {
                             self.read_single_line_comment();
                             return None;
@@ -88,7 +108,12 @@ impl Lexer {
             }
             '%' => {
                 self.advance();
-                Token::Percent
+                if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::PercentAssign
+                } else {
+                    Token::Percent
+                }
             }
             '<' => {
                 self.advance();
@@ -97,7 +122,12 @@ impl Lexer {
                     Token::LessEqual
                 } else if self.current_char() == Some('<') {
                     self.advance();
-                    Token::ShiftLeft
+                    if self.current_char() == Some('=') {
+                        self.advance();
+                        Token::ShiftLeftAssign
+                    } else {
+                        Token::ShiftLeft
+                    }
                 } else {
                     Token::Less
                 }
@@ -109,7 +139,12 @@ impl Lexer {
                     Token::GreaterEqual
                 } else if self.current_char() == Some('>') {
                     self.advance();
-                    Token::ShiftRight
+                    if self.current_char() == Some('=') {
+                        self.advance();
+                        Token::ShiftRightAssign
+                    } else {
+                        Token::ShiftRight
+                    }
                 } else {
                     Token::Greater
                 }
@@ -140,13 +175,21 @@ impl Lexer {
                 if self.current_char() == Some('&') {
                     self.advance();
                     Token::LogicalAnd
+                } else if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::BitAndAssign
                 } else {
                     Token::BitAnd
                 }
             }
             '^' => {
                 self.advance();
-                Token::BitXor
+                if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::BitXorAssign
+                } else {
+                    Token::BitXor
+                }
             }
             '~' => {
                 self.advance();
@@ -157,6 +200,9 @@ impl Lexer {
                 if self.current_char() == Some('|') {
                     self.advance();
                     Token::LogicalOr
+                } else if self.current_char() == Some('=') {
+                    self.advance();
+                    Token::BitOrAssign
                 } else {
                     // Single `|`: bitwise OR, or an or-pattern separator in
                     // match arms
