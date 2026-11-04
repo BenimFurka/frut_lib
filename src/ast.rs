@@ -70,17 +70,20 @@ pub enum Token {
     Match,
 
     // Types
-    StringType,
-    IntType,
-    BoolType,
-    DoubleType,
-    BytesType,
     VoidType,
+    BoolType,
+    BytesType,
+    StringType,
+    ShortType,
+    IntType,
+    LongType,
+    FloatType,
+    DoubleType,
 
     // Identifiers and literals
     Identifier(String),
     StringLiteral(String),
-    IntLiteral(i64),
+    IntLiteral(i32),
     DoubleLiteral(f64),
 
     // Operators
@@ -167,8 +170,11 @@ impl fmt::Display for Token {
             Token::Interface => write!(f, "interface"),
             Token::Match => write!(f, "match"),
             Token::StringType => write!(f, "string"),
+            Token::ShortType => write!(f, "short"),
             Token::IntType => write!(f, "int"),
+            Token::LongType => write!(f, "long"),
             Token::BoolType => write!(f, "bool"),
+            Token::FloatType => write!(f, "float"),
             Token::DoubleType => write!(f, "double"),
             Token::BytesType => write!(f, "bytes"),
             Token::VoidType => write!(f, "void"),
@@ -280,7 +286,10 @@ impl Token {
             self,
             Token::StringType
                 | Token::IntType
+                | Token::LongType
+                | Token::ShortType
                 | Token::BoolType
+                | Token::FloatType
                 | Token::DoubleType
                 | Token::BytesType
                 | Token::VoidType
@@ -743,7 +752,7 @@ pub struct Expression {
 pub enum ExpressionKind {
     // Literals
     StringLiteral(String),
-    IntLiteral(i64),
+    IntLiteral(i32),
     DoubleLiteral(f64),
     BoolLiteral(bool),
 
@@ -1000,7 +1009,7 @@ impl fmt::Display for EnumVariantDecl {
 /// Literal value inside a match pattern
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatternLiteral {
-    Int(i64),
+    Int(i32),
     Double(f64),
     Bool(bool),
     String(String),

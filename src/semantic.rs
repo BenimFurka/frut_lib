@@ -1289,13 +1289,13 @@ impl<'m> SemanticAnalyzer<'m> {
                                 return Err(self.create_error(error_type, message, &pos));
                             }
                         };
-                    if idx_type != Type::Int {
+                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long) {
                         return Err(self.create_error(
                             ErrorType::TypeMismatch {
-                                expected: "int".to_string(),
+                                expected: "short, int, or long".to_string(),
                                 found: idx_type.to_string(),
                             },
-                            "Array index must be of type int".to_string(),
+                            "Array index must be of type short, int, or long".to_string(),
                             &index.pos,
                         ));
                     }
@@ -1378,7 +1378,7 @@ impl<'m> SemanticAnalyzer<'m> {
                         BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul 
                         | BinaryOperator::Div | BinaryOperator::Mod => {
                             use crate::semantic::Type;
-                            if target_type != Type::Int && target_type != Type::Double {
+                            if !matches!(target_type, Type::Short | Type::Int | Type::Long | Type::Float | Type::Double) {
                                 return Err(self.create_error(
                                     ErrorType::TypeError,
                                     format!("Arithmetic operations require numeric types, got '{}'", target_type),
@@ -1389,10 +1389,10 @@ impl<'m> SemanticAnalyzer<'m> {
                         BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor
                         | BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
                             use crate::semantic::Type;
-                            if target_type != Type::Int {
+                            if !matches!(target_type, Type::Short | Type::Int | Type::Long) {
                                 return Err(self.create_error(
                                     ErrorType::TypeError,
-                                    format!("Bitwise operations require int type, got '{}'", target_type),
+                                    format!("Bitwise operations require short, int or long type, got '{}'", target_type),
                                     &value.pos,
                                 ));
                             }
@@ -1486,13 +1486,13 @@ impl<'m> SemanticAnalyzer<'m> {
                                 return Err(self.create_error(error_type, message, &pos));
                             }
                         };
-                    if idx_type != Type::Int {
+                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long) {
                         return Err(self.create_error(
                             ErrorType::TypeMismatch {
-                                expected: "int".to_string(),
+                                expected: "short, int, or long".to_string(),
                                 found: idx_type.to_string(),
                             },
-                            "Array index must be of type int".to_string(),
+                            "Array index must be of type short, int, or long".to_string(),
                             &index.pos,
                         ));
                     }
@@ -3244,8 +3244,26 @@ impl<'m> SemanticAnalyzer<'m> {
     ) -> Result<Type, (ErrorType, String, crate::Position)> {
         match &expr.kind {
             ExpressionKind::StringLiteral(_) => Ok(Type::String),
-            ExpressionKind::IntLiteral(_) => Ok(Type::Int),
-            ExpressionKind::DoubleLiteral(_) => Ok(Type::Double),
+            ExpressionKind::IntLiteral(n) => {
+                match self.hint() {
+                    Some(Type::Short) => {
+                        if *n >= i16::MIN as i32 && *n <= i16::MAX as i32 {
+                            Ok(Type::Short)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for short".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::Long) => Ok(Type::Long),
+                    _ => Ok(Type::Int), // По умолчанию int
+                }
+            },
+            ExpressionKind::DoubleLiteral(_) => {
+                // Смотрим, не ждут ли от нас Float
+                match self.hint() {
+                    Some(Type::Float) => Ok(Type::Float),
+                    _ => Ok(Type::Double), // По умолчанию double
+                }
+            },
             ExpressionKind::BoolLiteral(_) => Ok(Type::Bool),
             ExpressionKind::Variable(name) => {
                 for scope in environment.scopes.iter().rev() {
@@ -3343,12 +3361,12 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     }
                     UnaryOperator::Plus | UnaryOperator::Minus => {
-                        if operand_type == Type::Int || operand_type == Type::Double {
+                        if operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long || operand_type == Type::Float || operand_type == Type::Double {
                             Ok(operand_type)
                         } else {
                             Err((
                                 ErrorType::TypeMismatch {
-                                    expected: "int or double".to_string(),
+                                    expected: "short, int, long, float, or double".to_string(),
                                     found: format!("{operand_type}"),
                                 },
                                 "Cannot apply unary +/- to non-numeric type".to_string(),
@@ -3357,12 +3375,12 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     }
                     UnaryOperator::BitNot => {
-                        if operand_type == Type::Any || operand_type == Type::Int {
-                            Ok(Type::Int)
+                        if operand_type == Type::Any || operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long {
+                            Ok(operand_type) 
                         } else {
                             Err((
                                 ErrorType::TypeMismatch {
-                                    expected: "int".to_string(),
+                                    expected: "short, int, or long".to_string(),
                                     found: format!("{operand_type}"),
                                 },
                                 "Cannot apply '~' operator to non-integer type".to_string(),
@@ -3406,7 +3424,7 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any || right_type == Type::Any {
                             Ok(Type::Any)
                         } else if left_type == right_type
-                            && (left_type == Type::Int || left_type == Type::Double)
+                            && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long || left_type == Type::Float || left_type == Type::Double)
                         {
                             Ok(left_type)
                         } else {
@@ -3427,7 +3445,7 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any
                             || right_type == Type::Any
                             || (left_type == right_type
-                                && (left_type == Type::Int || left_type == Type::Double))
+                                && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long || left_type == Type::Float || left_type == Type::Double))
                         {
                             Ok(Type::Bool)
                         } else {
@@ -3477,12 +3495,14 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any
                             || right_type == Type::Any
                             || (left_type == Type::Int && right_type == Type::Int)
+                            || (left_type == Type::Short && right_type == Type::Short)
+                            || (left_type == Type::Long && right_type == Type::Long)
                         {
-                            Ok(Type::Int)
+                            Ok(left_type)
                         } else {
                             Err((
                                 ErrorType::TypeMismatch {
-                                    expected: "int and int".to_string(),
+                                    expected: "short, int, or long".to_string(),
                                     found: format!("{left_type} and {right_type}"),
                                 },
                                 "Cannot perform bitwise operation on non-integer types"
@@ -4507,13 +4527,13 @@ impl<'m> SemanticAnalyzer<'m> {
                     self.get_expression_type_with_environment(object, &self.environment)?;
                 let index_type =
                     self.get_expression_type_with_environment(index, &self.environment)?;
-                if index_type != Type::Int {
+                if (index_type != Type::Int) && (index_type != Type::Short) && (index_type != Type::Long) {
                     return Err((
                         ErrorType::TypeMismatch {
-                            expected: "int".to_string(),
+                            expected: "int, short, or long".to_string(),
                             found: index_type.to_string(),
                         },
-                        "Array index must be of type int".to_string(),
+                        "Array index must be of type int, short, or long".to_string(),
                         index.pos.clone(),
                     ));
                 }

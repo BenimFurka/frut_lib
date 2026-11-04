@@ -56,8 +56,11 @@ pub type NativeFn = NativeFnWrapper;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     String(String),
-    Int(i64),
+    Short(i16),
+    Int(i32),
+    Long(i64),
     Bool(bool),
+    Float(f32),
     Double(f64),
     /// Raw byte sequence (binary data). Created by natives (fs/pty/events);
     /// no source-level literal - use `bytes_from_*` bridges
@@ -100,8 +103,11 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::String(s) => write!(f, "{s}"),
+            Value::Short(n) => write!(f, "{n}"),
             Value::Int(n) => write!(f, "{n}"),
+            Value::Long(n) => write!(f, "{n}"),
             Value::Bool(b) => write!(f, "{b}"),
+            Value::Float(n) => write!(f, "{n}"),
             Value::Double(n) => write!(f, "{n}"),
             Value::Bytes(b) => {
                 write!(f, "bytes[")?;
@@ -173,9 +179,12 @@ impl Value {
     pub fn get_type(&self) -> Type {
         match self {
             Value::String(_) => Type::String,
+            Value::Short(_) => Type::Short,
             Value::Int(_) => Type::Int,
+            Value::Long(_) => Type::Long,
             Value::Bool(_) => Type::Bool,
             Value::Double(_) => Type::Double,
+            Value::Float(_) => Type::Float,
             Value::Bytes(_) => Type::Bytes,
             Value::Function {
                 params,
@@ -247,7 +256,7 @@ impl Value {
     }
 
     /// Create a value from an integer literal
-    pub fn from_int(n: i64) -> Self {
+    pub fn from_int(n: i32) -> Self {
         Value::Int(n)
     }
 
@@ -304,20 +313,34 @@ impl Value {
                 _ => Err(format!("Cannot apply '!' operator to {}", self.get_type())),
             },
             crate::ast::UnaryOperator::Plus => match self {
+                Value::Short(n) => Ok(Value::Short(*n)),
                 Value::Int(n) => Ok(Value::Int(*n)),
+                Value::Long(n) => Ok(Value::Long(*n)),
+                Value::Float(n) => Ok(Value::Float(*n)),
                 Value::Double(n) => Ok(Value::Double(*n)),
                 _ => Err(format!("Cannot apply unary '+' to {}", self.get_type())),
             },
             crate::ast::UnaryOperator::Minus => match self {
+                Value::Short(n) => n
+                    .checked_neg()
+                    .map(Value::Short)
+                    .ok_or_else(|| "Integer overflow in unary '-'".to_string()),
                 Value::Int(n) => n
                     .checked_neg()
                     .map(Value::Int)
                     .ok_or_else(|| "Integer overflow in unary '-'".to_string()),
+                Value::Long(n) => n
+                    .checked_neg()
+                    .map(Value::Long)
+                    .ok_or_else(|| "Integer overflow in unary '-'".to_string()),
+                Value::Float(n) => Ok(Value::Float(-*n)),
                 Value::Double(n) => Ok(Value::Double(-*n)),
                 _ => Err(format!("Cannot apply unary '-' to {}", self.get_type())),
             },
             crate::ast::UnaryOperator::BitNot => match self {
                 Value::Int(n) => Ok(Value::Int(!n)),
+                Value::Short(n) => Ok(Value::Short(!n)),
+                Value::Long(n) => Ok(Value::Long(!n)),
                 _ => Err(format!("Cannot apply '~' operator to {}", self.get_type())),
             },
         }
@@ -327,10 +350,19 @@ impl Value {
     pub fn binary_op(&self, op: crate::ast::BinaryOperator, other: &Self) -> Result<Self, String> {
         match op {
             crate::ast::BinaryOperator::Add => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => a
+                    .checked_add(*b)
+                    .map(Value::Short)
+                    .ok_or_else(|| "Short overflow in addition".to_string()),
                 (Value::Int(a), Value::Int(b)) => a
                     .checked_add(*b)
                     .map(Value::Int)
                     .ok_or_else(|| "Integer overflow in addition".to_string()),
+                (Value::Long(a), Value::Long(b)) => a
+                    .checked_add(*b)
+                    .map(Value::Long)
+                    .ok_or_else(|| "Long overflow in addition".to_string()),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
                 (Value::Bytes(a), Value::Bytes(b)) => {
                     let mut out = a.clone();
@@ -338,7 +370,9 @@ impl Value {
                     Ok(Value::Bytes(out))
                 }
                 (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
+                (Value::String(a), Value::Short(b)) => Ok(Value::String(format!("{a}{b}"))),
                 (Value::String(a), Value::Int(b)) => Ok(Value::String(format!("{a}{b}"))),
+                (Value::String(a), Value::Long(b)) => Ok(Value::String(format!("{a}{b}"))),
                 (Value::String(a), Value::Double(b)) => Ok(Value::String(format!("{a}{b}"))),
                 (Value::String(a), Value::Bool(b)) => Ok(Value::String(format!("{a}{b}"))),
                 (Value::String(a), b) => Ok(Value::String(format!("{a}{b}"))),
@@ -346,22 +380,49 @@ impl Value {
                 _ => Err("Type mismatch in addition".to_string()),
             },
             crate::ast::BinaryOperator::Sub => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => a
+                    .checked_sub(*b)
+                    .map(Value::Short)
+                    .ok_or_else(|| "Short overflow in subtraction".to_string()),
                 (Value::Int(a), Value::Int(b)) => a
                     .checked_sub(*b)
                     .map(Value::Int)
                     .ok_or_else(|| "Integer overflow in subtraction".to_string()),
+                (Value::Long(a), Value::Long(b)) => a
+                    .checked_sub(*b)
+                    .map(Value::Long)
+                    .ok_or_else(|| "long overflow in subtraction".to_string()),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a - b)),
                 _ => Err("Type mismatch in subtraction".to_string()),
             },
             crate::ast::BinaryOperator::Mul => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => a
+                    .checked_mul(*b)
+                    .map(Value::Short)
+                    .ok_or_else(|| "Short overflow in multiplication".to_string()),
                 (Value::Int(a), Value::Int(b)) => a
                     .checked_mul(*b)
                     .map(Value::Int)
                     .ok_or_else(|| "Integer overflow in multiplication".to_string()),
+                (Value::Long(a), Value::Long(b)) => a
+                    .checked_mul(*b)
+                    .map(Value::Long)
+                    .ok_or_else(|| "Long overflow in multiplication".to_string()),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Double(a * b)),
                 _ => Err("Type mismatch in multiplication".to_string()),
             },
             crate::ast::BinaryOperator::Div => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => {
+                    if *b == 0 {
+                        Err("Division by zero".to_string())
+                    } else {
+                        a.checked_div(*b)
+                            .map(Value::Short)
+                            .ok_or_else(|| "Short overflow in division".to_string())
+                    }
+                }
                 (Value::Int(a), Value::Int(b)) => {
                     if *b == 0 {
                         Err("Division by zero".to_string())
@@ -369,6 +430,22 @@ impl Value {
                         a.checked_div(*b)
                             .map(Value::Int)
                             .ok_or_else(|| "Integer overflow in division".to_string())
+                    }
+                }
+                (Value::Long(a), Value::Long(b)) => {
+                    if *b == 0 {
+                        Err("Division by zero".to_string())
+                    } else {
+                        a.checked_div(*b)
+                            .map(Value::Long)
+                            .ok_or_else(|| "Long overflow in division".to_string())
+                    }
+                }
+                (Value::Float(a), Value::Float(b)) => {
+                    if *b == 0.0 {
+                        Err("Division by zero".to_string())
+                    } else {
+                        Ok(Value::Float(a / b))
                     }
                 }
                 (Value::Double(a), Value::Double(b)) => {
@@ -381,6 +458,15 @@ impl Value {
                 _ => Err("Type mismatch in division".to_string()),
             },
             crate::ast::BinaryOperator::Mod => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => {
+                    if *b == 0 {
+                        Err("Division by zero".to_string())
+                    } else {
+                        a.checked_rem(*b)
+                            .map(Value::Short)
+                            .ok_or_else(|| "Short overflow in modulo".to_string())
+                    }
+                }
                 (Value::Int(a), Value::Int(b)) => {
                     if *b == 0 {
                         Err("Division by zero".to_string())
@@ -390,25 +476,46 @@ impl Value {
                             .ok_or_else(|| "Integer overflow in modulo".to_string())
                     }
                 }
+                (Value::Long(a), Value::Long(b)) => {
+                    if *b == 0 {
+                        Err("Division by zero".to_string())
+                    } else {
+                        a.checked_rem(*b)
+                            .map(Value::Long)
+                            .ok_or_else(|| "Long overflow in modulo".to_string())
+                    }
+                }
                 _ => Err("Modulo operation only supported for integers".to_string()),
             },
             crate::ast::BinaryOperator::Less => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Bool(a < b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Bool(a < b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Bool(a < b)),
                 _ => Err("Type mismatch in comparison".to_string()),
             },
             crate::ast::BinaryOperator::LessEqual => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Bool(a <= b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Bool(a <= b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Bool(a <= b)),
                 _ => Err("Type mismatch in comparison".to_string()),
             },
             crate::ast::BinaryOperator::Greater => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Bool(a > b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Bool(a > b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Bool(a > b)),
                 _ => Err("Type mismatch in comparison".to_string()),
             },
             crate::ast::BinaryOperator::GreaterEqual => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Bool(a >= b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Bool(a >= b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
                 (Value::Double(a), Value::Double(b)) => Ok(Value::Bool(a >= b)),
                 _ => Err("Type mismatch in comparison".to_string()),
             },
@@ -460,33 +567,67 @@ impl Value {
                 _ => Err("Logical OR requires boolean operands".to_string()),
             },
             crate::ast::BinaryOperator::BitAnd => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Short(a & b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a & b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Long(a & b)),
                 _ => Err("Bitwise AND requires integer operands".to_string()),
             },
             crate::ast::BinaryOperator::BitOr => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Short(a | b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a | b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Long(a | b)),
                 _ => Err("Bitwise OR requires integer operands".to_string()),
             },
             crate::ast::BinaryOperator::BitXor => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => Ok(Value::Short(a ^ b)),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a ^ b)),
+                (Value::Long(a), Value::Long(b)) => Ok(Value::Long(a ^ b)),
                 _ => Err("Bitwise XOR requires integer operands".to_string()),
             },
             crate::ast::BinaryOperator::ShiftLeft => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => {
+                    if *b < 0 || *b >= 16 {
+                        Err("Shift amount out of range".to_string())
+                    } else {
+                        Ok(Value::Short(a << b))
+                    }
+                }
                 (Value::Int(a), Value::Int(b)) => {
-                    if *b < 0 || *b >= 64 {
+                    if *b < 0 || *b >= 32 {
                         Err("Shift amount out of range".to_string())
                     } else {
                         Ok(Value::Int(a << b))
                     }
                 }
-                _ => Err("Shift left requires integer operands".to_string()),
-            },
-            crate::ast::BinaryOperator::ShiftRight => match (self, other) {
-                (Value::Int(a), Value::Int(b)) => {
+                (Value::Long(a), Value::Long(b)) => {
                     if *b < 0 || *b >= 64 {
                         Err("Shift amount out of range".to_string())
                     } else {
+                        Ok(Value::Long(a << b))
+                    }
+                }
+                _ => Err("Shift left requires integer operands".to_string()),
+            },
+            crate::ast::BinaryOperator::ShiftRight => match (self, other) {
+                (Value::Short(a), Value::Short(b)) => {
+                    if *b < 0 || *b >= 16 {
+                        Err("Shift amount out of range".to_string())
+                    } else {
+                        Ok(Value::Short(a >> b))
+                    }
+                }
+                (Value::Int(a), Value::Int(b)) => {
+                    if *b < 0 || *b >= 32 {
+                        Err("Shift amount out of range".to_string())
+                    } else {
                         Ok(Value::Int(a >> b))
+                    }
+                }
+                (Value::Long(a), Value::Long(b)) => {
+                    if *b < 0 || *b >= 64 {
+                        Err("Shift amount out of range".to_string())
+                    } else {
+                        Ok(Value::Long(a >> b))
                     }
                 }
                 _ => Err("Shift right requires integer operands".to_string()),
