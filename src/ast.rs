@@ -79,6 +79,9 @@ pub enum Token {
     LongType,
     FloatType,
     DoubleType,
+    UnsignedShortType,
+    UnsignedIntType,
+    UnsignedLongType,
 
     // Identifiers and literals
     Identifier(String),
@@ -173,6 +176,9 @@ impl fmt::Display for Token {
             Token::ShortType => write!(f, "short"),
             Token::IntType => write!(f, "int"),
             Token::LongType => write!(f, "long"),
+            Token::UnsignedShortType => write!(f, "ushort"),
+            Token::UnsignedIntType => write!(f, "uint"),
+            Token::UnsignedLongType => write!(f, "ulong"),
             Token::BoolType => write!(f, "bool"),
             Token::FloatType => write!(f, "float"),
             Token::DoubleType => write!(f, "double"),
@@ -288,6 +294,9 @@ impl Token {
                 | Token::IntType
                 | Token::LongType
                 | Token::ShortType
+                | Token::UnsignedShortType
+                | Token::UnsignedIntType
+                | Token::UnsignedLongType
                 | Token::BoolType
                 | Token::FloatType
                 | Token::DoubleType

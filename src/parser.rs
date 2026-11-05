@@ -626,6 +626,18 @@ impl Parser {
                     self.advance();
                     "long".to_string()
                 }
+                Token::UnsignedShortType => {
+                    self.advance();
+                    "ushort".to_string()
+                }
+                Token::UnsignedIntType => {
+                    self.advance();
+                    "uint".to_string()
+                }
+                Token::UnsignedLongType => {
+                    self.advance();
+                    "ulong".to_string()
+                }
                 Token::FloatType => {
                     self.advance();
                     "float".to_string()
@@ -2775,6 +2787,18 @@ impl Parser {
                 Token::LongType => {
                     self.advance();
                     Ok(crate::ast::TypeExpr::Named("long".to_string()))
+                }
+                Token::UnsignedShortType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("ushort".to_string()))
+                }
+                Token::UnsignedIntType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("uint".to_string()))
+                }
+                Token::UnsignedLongType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("ulong".to_string()))
                 }
                 Token::FloatType => {
                     self.advance();

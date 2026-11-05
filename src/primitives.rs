@@ -34,6 +34,30 @@ fn long_methods() -> Vec<PrimitiveMethodSig> {
     }]
 }
 
+fn unsigned_short_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::UnsignedShort,
+    }]
+}
+
+fn unsigned_int_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::UnsignedInt,
+    }]
+}
+
+fn unsigned_long_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::UnsignedLong,
+    }]
+}
+
 fn float_methods() -> Vec<PrimitiveMethodSig> {
     vec![PrimitiveMethodSig {
         name: "abs".to_string(),
@@ -184,6 +208,9 @@ pub fn get_methods_for(ty: &Type) -> Option<Vec<PrimitiveMethodSig>> {
         Type::Short => Some(short_methods()),
         Type::Int => Some(int_methods()),
         Type::Long => Some(long_methods()),
+        Type::UnsignedShort => Some(unsigned_short_methods()),
+        Type::UnsignedInt => Some(unsigned_int_methods()),
+        Type::UnsignedLong => Some(unsigned_long_methods()),
         Type::Float => Some(float_methods()),
         Type::Double => Some(double_methods()),
         Type::String => Some(string_methods()),
@@ -204,6 +231,9 @@ pub fn call(receiver: &Value, name: &str, mut args: Vec<Value>) -> Option<Result
         (Value::Short(i), "abs") => Some(Ok(Value::Short(i.abs()))),
         (Value::Int(i), "abs") => Some(Ok(Value::Int(i.abs()))),
         (Value::Long(i), "abs") => Some(Ok(Value::Long(i.abs()))),
+        (Value::UnsignedShort(i), "abs") => Some(Ok(Value::UnsignedShort(*i))),
+        (Value::UnsignedInt(i), "abs") => Some(Ok(Value::UnsignedInt(*i))),
+        (Value::UnsignedLong(i), "abs") => Some(Ok(Value::UnsignedLong(*i))),
         (Value::Float(d), "abs") => Some(Ok(Value::Float(d.abs()))),
         (Value::Double(d), "abs") => Some(Ok(Value::Double(d.abs()))),
         (Value::String(s), "len") => Some(Ok(Value::Int(s.chars().count() as i32))),

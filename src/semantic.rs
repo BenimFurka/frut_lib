@@ -1289,7 +1289,7 @@ impl<'m> SemanticAnalyzer<'m> {
                                 return Err(self.create_error(error_type, message, &pos));
                             }
                         };
-                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long) {
+                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                         return Err(self.create_error(
                             ErrorType::TypeMismatch {
                                 expected: "short, int, or long".to_string(),
@@ -1378,7 +1378,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul 
                         | BinaryOperator::Div | BinaryOperator::Mod => {
                             use crate::semantic::Type;
-                            if !matches!(target_type, Type::Short | Type::Int | Type::Long | Type::Float | Type::Double) {
+                            if !matches!(target_type, Type::Short | Type::Int | Type::Long
+                                        | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong
+                                        | Type::Float | Type::Double) {
                                 return Err(self.create_error(
                                     ErrorType::TypeError,
                                     format!("Arithmetic operations require numeric types, got '{}'", target_type),
@@ -1389,7 +1391,8 @@ impl<'m> SemanticAnalyzer<'m> {
                         BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor
                         | BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
                             use crate::semantic::Type;
-                            if !matches!(target_type, Type::Short | Type::Int | Type::Long) {
+                            if !matches!(target_type, Type::Short | Type::Int | Type::Long
+                                        | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                                 return Err(self.create_error(
                                     ErrorType::TypeError,
                                     format!("Bitwise operations require short, int or long type, got '{}'", target_type),
@@ -1486,7 +1489,7 @@ impl<'m> SemanticAnalyzer<'m> {
                                 return Err(self.create_error(error_type, message, &pos));
                             }
                         };
-                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long) {
+                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                         return Err(self.create_error(
                             ErrorType::TypeMismatch {
                                 expected: "short, int, or long".to_string(),
@@ -2118,7 +2121,9 @@ impl<'m> SemanticAnalyzer<'m> {
 
         let supported = matches!(
             scrutinee_type,
-            Type::Enum { .. } | Type::Int | Type::Double | Type::String | Type::Bool
+            Type::Enum { .. } | Type::Short | Type::Int | Type::Long 
+            | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong 
+            | Type::Float | Type::Double | Type::String | Type::Bool
         );
         if !supported {
             return Err(self.create_error(
@@ -3217,18 +3222,28 @@ impl<'m> SemanticAnalyzer<'m> {
     /// Check if a cast from source_type to target_type is valid
     fn is_valid_cast(&self, source_type: &Type, target_type: &Type) -> bool {
         match (source_type, target_type) {
-            // Int to Double is always valid
-            (Type::Int, Type::Double) => true,
-            // Double to Int is valid (truncates decimal part)
-            (Type::Double, Type::Int) => true,
-            // String to Int/Double if the string is a valid number
-            (Type::String, Type::Int) | (Type::String, Type::Double) => true,
+            // Number to Number is valid (truncates decimal part)
+            (
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double,
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double
+            ) => true,
+            // String to Number is valid
+            (
+                Type::String,
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double
+            ) => true,
             // Any type to String is valid
             (_, Type::String) => true,
-            // Bool to Int (true=1, false=0)
-            (Type::Bool, Type::Int) => true,
-            // Int to Bool (0=false, non-zero=true)
-            (Type::Int, Type::Bool) => true,
+            // Bool to Number (true=1, false=0)
+            (
+                Type::Bool,
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double
+            ) => true,
+            // Number to Bool (0=false, non-zero=true)
+            (
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double,
+                Type::Bool
+            ) => true,
             // Same type is always valid
             (t1, t2) if t1 == t2 => true,
             // Invalid cast
@@ -3361,7 +3376,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     }
                     UnaryOperator::Plus | UnaryOperator::Minus => {
-                        if operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long || operand_type == Type::Float || operand_type == Type::Double {
+                        if operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long
+                        || operand_type == Type::UnsignedShort || operand_type == Type::UnsignedInt || operand_type == Type::UnsignedLong
+                        || operand_type == Type::Float || operand_type == Type::Double {
                             Ok(operand_type)
                         } else {
                             Err((
@@ -3375,7 +3392,8 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     }
                     UnaryOperator::BitNot => {
-                        if operand_type == Type::Any || operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long {
+                        if operand_type == Type::Any || operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long
+                        || operand_type == Type::UnsignedShort || operand_type == Type::UnsignedInt || operand_type == Type::UnsignedLong {
                             Ok(operand_type) 
                         } else {
                             Err((
@@ -3424,7 +3442,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any || right_type == Type::Any {
                             Ok(Type::Any)
                         } else if left_type == right_type
-                            && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long || left_type == Type::Float || left_type == Type::Double)
+                            && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long
+                                || left_type == Type::UnsignedShort || left_type == Type::UnsignedInt || left_type == Type::UnsignedLong
+                                || left_type == Type::Float || left_type == Type::Double)
                         {
                             Ok(left_type)
                         } else {
@@ -3445,7 +3465,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any
                             || right_type == Type::Any
                             || (left_type == right_type
-                                && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long || left_type == Type::Float || left_type == Type::Double))
+                                && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long
+                                    || left_type == Type::UnsignedShort || left_type == Type::UnsignedInt || left_type == Type::UnsignedLong
+                                    || left_type == Type::Float || left_type == Type::Double))
                         {
                             Ok(Type::Bool)
                         } else {
@@ -3497,6 +3519,9 @@ impl<'m> SemanticAnalyzer<'m> {
                             || (left_type == Type::Int && right_type == Type::Int)
                             || (left_type == Type::Short && right_type == Type::Short)
                             || (left_type == Type::Long && right_type == Type::Long)
+                            || (left_type == Type::UnsignedShort && right_type == Type::UnsignedShort)
+                            || (left_type == Type::UnsignedInt && right_type == Type::UnsignedInt)
+                            || (left_type == Type::UnsignedLong && right_type == Type::UnsignedLong)
                         {
                             Ok(left_type)
                         } else {
@@ -4527,7 +4552,8 @@ impl<'m> SemanticAnalyzer<'m> {
                     self.get_expression_type_with_environment(object, &self.environment)?;
                 let index_type =
                     self.get_expression_type_with_environment(index, &self.environment)?;
-                if (index_type != Type::Int) && (index_type != Type::Short) && (index_type != Type::Long) {
+                if !matches!(index_type, Type::Short | Type::Int | Type::Long
+                    | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                     return Err((
                         ErrorType::TypeMismatch {
                             expected: "int, short, or long".to_string(),
