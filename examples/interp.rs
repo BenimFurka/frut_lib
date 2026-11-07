@@ -102,7 +102,7 @@ impl SimpleInterpreter {
 
     fn interpret_expression(&mut self, expr: &Expression) -> InterpretResult {
         match &expr.kind {
-            ExpressionKind::IntLiteral(n) => Ok(Value::Int(*n)),
+            ExpressionKind::IntLiteral(n) => Ok(Value::from_int(*n)),
             ExpressionKind::StringLiteral(s) => Ok(Value::String(s.clone())),
             ExpressionKind::BoolLiteral(b) => Ok(Value::Bool(*b)),
             ExpressionKind::DoubleLiteral(n) => Ok(Value::Double(*n)),

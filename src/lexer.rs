@@ -391,7 +391,7 @@ impl Lexer {
                 self.advance();
             }
             let digits: String = self.input[digits_start..self.position].iter().collect();
-            return match i32::from_str_radix(&digits, 16) {
+            return match i64::from_str_radix(&digits, 16) {
                 Ok(n) => Token::IntLiteral(n),
                 Err(_) => Token::InvalidNumber(format!("0x{digits}")),
             };
@@ -420,7 +420,7 @@ impl Lexer {
                 _ => Token::InvalidNumber(literal),
             }
         } else {
-            match literal.parse::<i32>() {
+            match literal.parse::<i64>() {
                 Ok(n) => Token::IntLiteral(n),
                 Err(_) => Token::InvalidNumber(literal),
             }

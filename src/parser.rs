@@ -2313,7 +2313,7 @@ impl Parser {
                             self.advance();
                             let _ = pos;
                             return Ok(Expression {
-                                kind: ExpressionKind::IntLiteral(i32::MIN),
+                                kind: ExpressionKind::IntLiteral(i64::MIN),
                                 pos: lit_pos,
                             });
                         }

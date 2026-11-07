@@ -264,9 +264,14 @@ impl Value {
         Value::Bool(b)
     }
 
-    /// Create a value from an integer literal
-    pub fn from_int(n: i32) -> Self {
-        Value::Int(n)
+    /// Create a value from an integer literal.
+    /// Fits in `i32` -> `Int`, otherwise -> `Long`
+    pub fn from_int(n: i64) -> Self {
+        if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+            Value::Int(n as i32)
+        } else {
+            Value::Long(n)
+        }
     }
 
     /// Create a value from a double literal
@@ -338,10 +343,9 @@ impl Value {
                 Value::Long(n) => n.checked_neg().map(Value::Long).ok_or_else(|| "Long overflow in unary '-'".to_string()),
                 Value::Float(n) => Ok(Value::Float(-*n)),
                 Value::Double(n) => Ok(Value::Double(-*n)),
-                // Беззнаковые числа нельзя сделать отрицательными
-                Value::UnsignedShort(_) | Value::UnsignedInt(_) | Value::UnsignedLong(_) => {
-                    Err("Cannot apply unary '-' to unsigned integer".to_string())
-                }
+                Value::UnsignedShort(n) => Ok(Value::UnsignedShort(n.wrapping_neg())),
+                Value::UnsignedInt(n) => Ok(Value::UnsignedInt(n.wrapping_neg())),
+                Value::UnsignedLong(n) => Ok(Value::UnsignedLong(n.wrapping_neg())),
                 _ => Err(format!("Cannot apply unary '-' to {}", self.get_type())),
             },
             crate::ast::UnaryOperator::BitNot => match self {

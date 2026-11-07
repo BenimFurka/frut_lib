@@ -86,7 +86,7 @@ pub enum Token {
     // Identifiers and literals
     Identifier(String),
     StringLiteral(String),
-    IntLiteral(i32),
+    IntLiteral(i64),
     DoubleLiteral(f64),
 
     // Operators
@@ -761,7 +761,7 @@ pub struct Expression {
 pub enum ExpressionKind {
     // Literals
     StringLiteral(String),
-    IntLiteral(i32),
+    IntLiteral(i64),
     DoubleLiteral(f64),
     BoolLiteral(bool),
 
@@ -1018,7 +1018,7 @@ impl fmt::Display for EnumVariantDecl {
 /// Literal value inside a match pattern
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatternLiteral {
-    Int(i32),
+    Int(i64),
     Double(f64),
     Bool(bool),
     String(String),

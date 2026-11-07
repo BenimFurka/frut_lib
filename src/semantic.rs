@@ -3260,16 +3260,53 @@ impl<'m> SemanticAnalyzer<'m> {
         match &expr.kind {
             ExpressionKind::StringLiteral(_) => Ok(Type::String),
             ExpressionKind::IntLiteral(n) => {
+                let n = *n;
                 match self.hint() {
                     Some(Type::Short) => {
-                        if *n >= i16::MIN as i32 && *n <= i16::MAX as i32 {
+                        if n >= i16::MIN as i64 && n <= i16::MAX as i64 {
                             Ok(Type::Short)
                         } else {
                             Err((ErrorType::InvalidNumber, "Number too large for short".to_string(), expr.pos.clone()))
                         }
                     }
+                    Some(Type::Int) => {
+                        if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+                            Ok(Type::Int)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for int".to_string(), expr.pos.clone()))
+                        }
+                    }
                     Some(Type::Long) => Ok(Type::Long),
-                    _ => Ok(Type::Int), // По умолчанию int
+                    Some(Type::UnsignedShort) => {
+                        if n >= 0 && n <= u16::MAX as i64 {
+                            Ok(Type::UnsignedShort)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for ushort".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::UnsignedInt) => {
+                        if n >= 0 && n <= u32::MAX as i64 {
+                            Ok(Type::UnsignedInt)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for uint".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::UnsignedLong) => {
+                        if n >= 0 {
+                            Ok(Type::UnsignedLong)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for ulong".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::Float) => Ok(Type::Float),
+                    Some(Type::Double) => Ok(Type::Double),
+                    _ => {
+                        if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+                            Ok(Type::Int)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for int".to_string(), expr.pos.clone()))
+                        }
+                    }
                 }
             },
             ExpressionKind::DoubleLiteral(_) => {
@@ -4595,7 +4632,13 @@ fn pos_of_import(import: &ResolvedImport) -> crate::Position {
 /// The `Type` of a pattern literal
 fn pattern_literal_type(lit: &crate::ast::PatternLiteral) -> Type {
     match lit {
-        crate::ast::PatternLiteral::Int(_) => Type::Int,
+        crate::ast::PatternLiteral::Int(n) => {
+            if *n >= i32::MIN as i64 && *n <= i32::MAX as i64 {
+                Type::Int
+            } else {
+                Type::Long
+            }
+        }
         crate::ast::PatternLiteral::Double(_) => Type::Double,
         crate::ast::PatternLiteral::Bool(_) => Type::Bool,
         crate::ast::PatternLiteral::String(_) => Type::String,
