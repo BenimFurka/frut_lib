@@ -70,12 +70,18 @@ pub enum Token {
     Match,
 
     // Types
-    StringType,
-    IntType,
-    BoolType,
-    DoubleType,
-    BytesType,
     VoidType,
+    BoolType,
+    BytesType,
+    StringType,
+    ShortType,
+    IntType,
+    LongType,
+    FloatType,
+    DoubleType,
+    UnsignedShortType,
+    UnsignedIntType,
+    UnsignedLongType,
 
     // Identifiers and literals
     Identifier(String),
@@ -167,8 +173,14 @@ impl fmt::Display for Token {
             Token::Interface => write!(f, "interface"),
             Token::Match => write!(f, "match"),
             Token::StringType => write!(f, "string"),
+            Token::ShortType => write!(f, "short"),
             Token::IntType => write!(f, "int"),
+            Token::LongType => write!(f, "long"),
+            Token::UnsignedShortType => write!(f, "ushort"),
+            Token::UnsignedIntType => write!(f, "uint"),
+            Token::UnsignedLongType => write!(f, "ulong"),
             Token::BoolType => write!(f, "bool"),
+            Token::FloatType => write!(f, "float"),
             Token::DoubleType => write!(f, "double"),
             Token::BytesType => write!(f, "bytes"),
             Token::VoidType => write!(f, "void"),
@@ -280,7 +292,13 @@ impl Token {
             self,
             Token::StringType
                 | Token::IntType
+                | Token::LongType
+                | Token::ShortType
+                | Token::UnsignedShortType
+                | Token::UnsignedIntType
+                | Token::UnsignedLongType
                 | Token::BoolType
+                | Token::FloatType
                 | Token::DoubleType
                 | Token::BytesType
                 | Token::VoidType

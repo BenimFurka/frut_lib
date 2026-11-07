@@ -606,17 +606,41 @@ impl Parser {
                     self.advance();
                     name
                 }
+                Token::BoolType => {
+                    self.advance();
+                    "bool".to_string()
+                }
                 Token::StringType => {
                     self.advance();
                     "string".to_string()
+                }
+                Token::ShortType => {
+                    self.advance();
+                    "short".to_string()
                 }
                 Token::IntType => {
                     self.advance();
                     "int".to_string()
                 }
-                Token::BoolType => {
+                Token::LongType => {
                     self.advance();
-                    "bool".to_string()
+                    "long".to_string()
+                }
+                Token::UnsignedShortType => {
+                    self.advance();
+                    "ushort".to_string()
+                }
+                Token::UnsignedIntType => {
+                    self.advance();
+                    "uint".to_string()
+                }
+                Token::UnsignedLongType => {
+                    self.advance();
+                    "ulong".to_string()
+                }
+                Token::FloatType => {
+                    self.advance();
+                    "float".to_string()
                 }
                 Token::DoubleType => {
                     self.advance();
@@ -2744,17 +2768,41 @@ impl Parser {
         // Simple type
         match self.current_token_with_position() {
             Some(twp) => match &twp.token {
+                Token::BoolType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("bool".to_string()))
+                }
                 Token::StringType => {
                     self.advance();
                     Ok(crate::ast::TypeExpr::Named("string".to_string()))
+                }
+                Token::ShortType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("short".to_string()))
                 }
                 Token::IntType => {
                     self.advance();
                     Ok(crate::ast::TypeExpr::Named("int".to_string()))
                 }
-                Token::BoolType => {
+                Token::LongType => {
                     self.advance();
-                    Ok(crate::ast::TypeExpr::Named("bool".to_string()))
+                    Ok(crate::ast::TypeExpr::Named("long".to_string()))
+                }
+                Token::UnsignedShortType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("ushort".to_string()))
+                }
+                Token::UnsignedIntType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("uint".to_string()))
+                }
+                Token::UnsignedLongType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("ulong".to_string()))
+                }
+                Token::FloatType => {
+                    self.advance();
+                    Ok(crate::ast::TypeExpr::Named("float".to_string()))
                 }
                 Token::DoubleType => {
                     self.advance();

@@ -10,11 +10,59 @@ pub struct PrimitiveMethodSig {
     pub return_type: Type,
 }
 
+fn short_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::Short,
+    }]
+}
+
 fn int_methods() -> Vec<PrimitiveMethodSig> {
     vec![PrimitiveMethodSig {
         name: "abs".to_string(),
         param_types: vec![],
         return_type: Type::Int,
+    }]
+}
+
+fn long_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::Long,
+    }]
+}
+
+fn unsigned_short_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::UnsignedShort,
+    }]
+}
+
+fn unsigned_int_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::UnsignedInt,
+    }]
+}
+
+fn unsigned_long_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::UnsignedLong,
+    }]
+}
+
+fn float_methods() -> Vec<PrimitiveMethodSig> {
+    vec![PrimitiveMethodSig {
+        name: "abs".to_string(),
+        param_types: vec![],
+        return_type: Type::Float,
     }]
 }
 
@@ -157,7 +205,13 @@ fn common_payload_element_type(ty: &Type) -> Type {
 
 pub fn get_methods_for(ty: &Type) -> Option<Vec<PrimitiveMethodSig>> {
     match ty {
+        Type::Short => Some(short_methods()),
         Type::Int => Some(int_methods()),
+        Type::Long => Some(long_methods()),
+        Type::UnsignedShort => Some(unsigned_short_methods()),
+        Type::UnsignedInt => Some(unsigned_int_methods()),
+        Type::UnsignedLong => Some(unsigned_long_methods()),
+        Type::Float => Some(float_methods()),
         Type::Double => Some(double_methods()),
         Type::String => Some(string_methods()),
         Type::Bool => Some(bool_methods()),
@@ -174,9 +228,15 @@ pub fn find_method_sig(ty: &Type, name: &str) -> Option<PrimitiveMethodSig> {
 
 pub fn call(receiver: &Value, name: &str, mut args: Vec<Value>) -> Option<Result<Value, String>> {
     match (receiver, name) {
+        (Value::Short(i), "abs") => Some(Ok(Value::Short(i.abs()))),
         (Value::Int(i), "abs") => Some(Ok(Value::Int(i.abs()))),
+        (Value::Long(i), "abs") => Some(Ok(Value::Long(i.abs()))),
+        (Value::UnsignedShort(i), "abs") => Some(Ok(Value::UnsignedShort(*i))),
+        (Value::UnsignedInt(i), "abs") => Some(Ok(Value::UnsignedInt(*i))),
+        (Value::UnsignedLong(i), "abs") => Some(Ok(Value::UnsignedLong(*i))),
+        (Value::Float(d), "abs") => Some(Ok(Value::Float(d.abs()))),
         (Value::Double(d), "abs") => Some(Ok(Value::Double(d.abs()))),
-        (Value::String(s), "len") => Some(Ok(Value::Int(s.chars().count() as i64))),
+        (Value::String(s), "len") => Some(Ok(Value::Int(s.chars().count() as i32))),
         (Value::String(s), "contains") => {
             if args.len() != 1 {
                 return Some(Err("contains expects 1 argument".to_string()));
@@ -192,14 +252,14 @@ pub fn call(receiver: &Value, name: &str, mut args: Vec<Value>) -> Option<Result
         (Value::String(s), "lower") => Some(Ok(Value::String(s.to_lowercase()))),
         (Value::String(s), "upper") => Some(Ok(Value::String(s.to_uppercase()))),
         (Value::Bool(b), "to_int") => Some(Ok(Value::Int(if *b { 1 } else { 0 }))),
-        (Value::Bytes(b), "len") => Some(Ok(Value::Int(b.len() as i64))),
+        (Value::Bytes(b), "len") => Some(Ok(Value::Int(b.len() as i32))),
         (Value::Bytes(b), "at") => {
             if args.len() != 1 {
                 return Some(Err("at expects 1 argument".to_string()));
             }
             match args.remove(0) {
                 Value::Int(i) if i >= 0 && (i as usize) < b.len() => {
-                    Some(Ok(Value::Int(b[i as usize] as i64)))
+                    Some(Ok(Value::Int(b[i as usize] as i32)))
                 }
                 Value::Int(_) => Some(Err("at: index out of range".to_string())),
                 other => Some(Err(format!("at expects int, got {}", other.get_type()))),
@@ -224,7 +284,7 @@ pub fn call(receiver: &Value, name: &str, mut args: Vec<Value>) -> Option<Result
             }
             Some(Ok(Value::Bytes(b[a..e].to_vec())))
         }
-        (Value::Array { elements, .. }, "len") => Some(Ok(Value::Int(elements.len() as i64))),
+        (Value::Array { elements, .. }, "len") => Some(Ok(Value::Int(elements.len() as i32))),
         (
             Value::Enum {
                 variant,

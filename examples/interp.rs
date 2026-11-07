@@ -102,7 +102,7 @@ impl SimpleInterpreter {
 
     fn interpret_expression(&mut self, expr: &Expression) -> InterpretResult {
         match &expr.kind {
-            ExpressionKind::IntLiteral(n) => Ok(Value::Int(*n)),
+            ExpressionKind::IntLiteral(n) => Ok(Value::from_int(*n)),
             ExpressionKind::StringLiteral(s) => Ok(Value::String(s.clone())),
             ExpressionKind::BoolLiteral(b) => Ok(Value::Bool(*b)),
             ExpressionKind::DoubleLiteral(n) => Ok(Value::Double(*n)),
@@ -179,10 +179,10 @@ impl SimpleInterpreter {
                 match target_type.to_string().as_str() {
                     "int" => match val {
                         Value::Int(n) => Ok(Value::Int(n)),
-                        Value::Double(n) => Ok(Value::Int(n as i64)),
+                        Value::Double(n) => Ok(Value::Int(n as i32)),
                         Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
                         Value::String(s) => s
-                            .parse::<i64>()
+                            .parse::<i32>()
                             .map(Value::Int)
                             .map_err(|_| format!("Cannot convert string '{s}' to int")),
                         _ => unreachable!("Invalid cast to int: {val:?}"),
@@ -215,7 +215,13 @@ impl SimpleInterpreter {
                     },
                     "bool" => match val {
                         Value::Void => Ok(Value::Bool(false)),
+                        Value::Short(n) => Ok(Value::Bool(n != 0)),
                         Value::Int(n) => Ok(Value::Bool(n != 0)),
+                        Value::Long(n) => Ok(Value::Bool(n != 0)),
+                        Value::UnsignedShort(n) => Ok(Value::Bool(n != 0)),
+                        Value::UnsignedInt(n) => Ok(Value::Bool(n != 0)),
+                        Value::UnsignedLong(n) => Ok(Value::Bool(n != 0)),
+                        Value::Float(n) => Ok(Value::Bool(n != 0.0)),
                         Value::Double(n) => Ok(Value::Bool(n != 0.0)),
                         Value::Bool(b) => Ok(Value::Bool(b)),
                         Value::String(s) => Ok(Value::Bool(!s.is_empty())),

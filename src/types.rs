@@ -32,8 +32,14 @@ pub struct InterfaceMethod {
 #[derive(Debug, Clone)]
 pub enum Type {
     String,
+    Short,
     Int,
+    Long,
     Bool,
+    UnsignedShort,
+    UnsignedInt,
+    UnsignedLong,
+    Float,
     Double,
     /// Raw byte sequence (binary data, no UTF-8 semantics)
     Bytes,
@@ -92,8 +98,14 @@ impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Type::String, Type::String) => true,
+            (Type::Short, Type::Short) => true,
             (Type::Int, Type::Int) => true,
+            (Type::UnsignedShort, Type::UnsignedShort) => true,
+            (Type::UnsignedInt, Type::UnsignedInt) => true,
+            (Type::UnsignedLong, Type::UnsignedLong) => true,
+            (Type::Long, Type::Long) => true,
             (Type::Bool, Type::Bool) => true,
+            (Type::Float, Type::Float) => true,
             (Type::Double, Type::Double) => true,
             (Type::Bytes, Type::Bytes) => true,
             (Type::Function, Type::Function) => true,
@@ -168,8 +180,14 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::String => write!(f, "string"),
+            Type::Short => write!(f, "short"),
             Type::Int => write!(f, "int"),
+            Type::Long => write!(f, "long"),
+            Type::UnsignedShort => write!(f, "ushort"),
+            Type::UnsignedInt => write!(f, "uint"),
+            Type::UnsignedLong => write!(f, "ulong"),
             Type::Bool => write!(f, "bool"),
+            Type::Float => write!(f, "float"),
             Type::Double => write!(f, "double"),
             Type::Bytes => write!(f, "bytes"),
             Type::Function => write!(f, "function"),
@@ -426,8 +444,14 @@ impl From<&str> for Type {
 
         match s {
             "string" => Type::String,
+            "short" => Type::Short,
             "int" => Type::Int,
+            "long" => Type::Long,
+            "ushort" => Type::UnsignedShort,
+            "uint" => Type::UnsignedInt,
+            "ulong" => Type::UnsignedLong,
             "bool" => Type::Bool,
+            "float" => Type::Float,
             "double" => Type::Double,
             "bytes" => Type::Bytes,
             "function" => Type::Function,

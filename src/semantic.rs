@@ -1289,13 +1289,13 @@ impl<'m> SemanticAnalyzer<'m> {
                                 return Err(self.create_error(error_type, message, &pos));
                             }
                         };
-                    if idx_type != Type::Int {
+                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                         return Err(self.create_error(
                             ErrorType::TypeMismatch {
-                                expected: "int".to_string(),
+                                expected: "short, int, or long".to_string(),
                                 found: idx_type.to_string(),
                             },
-                            "Array index must be of type int".to_string(),
+                            "Array index must be of type short, int, or long".to_string(),
                             &index.pos,
                         ));
                     }
@@ -1378,7 +1378,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul 
                         | BinaryOperator::Div | BinaryOperator::Mod => {
                             use crate::semantic::Type;
-                            if target_type != Type::Int && target_type != Type::Double {
+                            if !matches!(target_type, Type::Short | Type::Int | Type::Long
+                                        | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong
+                                        | Type::Float | Type::Double) {
                                 return Err(self.create_error(
                                     ErrorType::TypeError,
                                     format!("Arithmetic operations require numeric types, got '{}'", target_type),
@@ -1389,10 +1391,11 @@ impl<'m> SemanticAnalyzer<'m> {
                         BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor
                         | BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
                             use crate::semantic::Type;
-                            if target_type != Type::Int {
+                            if !matches!(target_type, Type::Short | Type::Int | Type::Long
+                                        | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                                 return Err(self.create_error(
                                     ErrorType::TypeError,
-                                    format!("Bitwise operations require int type, got '{}'", target_type),
+                                    format!("Bitwise operations require short, int or long type, got '{}'", target_type),
                                     &value.pos,
                                 ));
                             }
@@ -1486,13 +1489,13 @@ impl<'m> SemanticAnalyzer<'m> {
                                 return Err(self.create_error(error_type, message, &pos));
                             }
                         };
-                    if idx_type != Type::Int {
+                    if !matches!(idx_type, Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                         return Err(self.create_error(
                             ErrorType::TypeMismatch {
-                                expected: "int".to_string(),
+                                expected: "short, int, or long".to_string(),
                                 found: idx_type.to_string(),
                             },
-                            "Array index must be of type int".to_string(),
+                            "Array index must be of type short, int, or long".to_string(),
                             &index.pos,
                         ));
                     }
@@ -2118,7 +2121,9 @@ impl<'m> SemanticAnalyzer<'m> {
 
         let supported = matches!(
             scrutinee_type,
-            Type::Enum { .. } | Type::Int | Type::Double | Type::String | Type::Bool
+            Type::Enum { .. } | Type::Short | Type::Int | Type::Long 
+            | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong 
+            | Type::Float | Type::Double | Type::String | Type::Bool
         );
         if !supported {
             return Err(self.create_error(
@@ -3217,18 +3222,28 @@ impl<'m> SemanticAnalyzer<'m> {
     /// Check if a cast from source_type to target_type is valid
     fn is_valid_cast(&self, source_type: &Type, target_type: &Type) -> bool {
         match (source_type, target_type) {
-            // Int to Double is always valid
-            (Type::Int, Type::Double) => true,
-            // Double to Int is valid (truncates decimal part)
-            (Type::Double, Type::Int) => true,
-            // String to Int/Double if the string is a valid number
-            (Type::String, Type::Int) | (Type::String, Type::Double) => true,
+            // Number to Number is valid (truncates decimal part)
+            (
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double,
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double
+            ) => true,
+            // String to Number is valid
+            (
+                Type::String,
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double
+            ) => true,
             // Any type to String is valid
             (_, Type::String) => true,
-            // Bool to Int (true=1, false=0)
-            (Type::Bool, Type::Int) => true,
-            // Int to Bool (0=false, non-zero=true)
-            (Type::Int, Type::Bool) => true,
+            // Bool to Number (true=1, false=0)
+            (
+                Type::Bool,
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double
+            ) => true,
+            // Number to Bool (0=false, non-zero=true)
+            (
+                Type::Short | Type::Int | Type::Long | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong | Type::Float | Type::Double,
+                Type::Bool
+            ) => true,
             // Same type is always valid
             (t1, t2) if t1 == t2 => true,
             // Invalid cast
@@ -3244,8 +3259,63 @@ impl<'m> SemanticAnalyzer<'m> {
     ) -> Result<Type, (ErrorType, String, crate::Position)> {
         match &expr.kind {
             ExpressionKind::StringLiteral(_) => Ok(Type::String),
-            ExpressionKind::IntLiteral(_) => Ok(Type::Int),
-            ExpressionKind::DoubleLiteral(_) => Ok(Type::Double),
+            ExpressionKind::IntLiteral(n) => {
+                let n = *n;
+                match self.hint() {
+                    Some(Type::Short) => {
+                        if n >= i16::MIN as i64 && n <= i16::MAX as i64 {
+                            Ok(Type::Short)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for short".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::Int) => {
+                        if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+                            Ok(Type::Int)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for int".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::Long) => Ok(Type::Long),
+                    Some(Type::UnsignedShort) => {
+                        if n >= 0 && n <= u16::MAX as i64 {
+                            Ok(Type::UnsignedShort)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for ushort".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::UnsignedInt) => {
+                        if n >= 0 && n <= u32::MAX as i64 {
+                            Ok(Type::UnsignedInt)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for uint".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::UnsignedLong) => {
+                        if n >= 0 {
+                            Ok(Type::UnsignedLong)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for ulong".to_string(), expr.pos.clone()))
+                        }
+                    }
+                    Some(Type::Float) => Ok(Type::Float),
+                    Some(Type::Double) => Ok(Type::Double),
+                    _ => {
+                        if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+                            Ok(Type::Int)
+                        } else {
+                            Err((ErrorType::InvalidNumber, "Number too large for int".to_string(), expr.pos.clone()))
+                        }
+                    }
+                }
+            },
+            ExpressionKind::DoubleLiteral(_) => {
+                // Смотрим, не ждут ли от нас Float
+                match self.hint() {
+                    Some(Type::Float) => Ok(Type::Float),
+                    _ => Ok(Type::Double), // По умолчанию double
+                }
+            },
             ExpressionKind::BoolLiteral(_) => Ok(Type::Bool),
             ExpressionKind::Variable(name) => {
                 for scope in environment.scopes.iter().rev() {
@@ -3343,12 +3413,14 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     }
                     UnaryOperator::Plus | UnaryOperator::Minus => {
-                        if operand_type == Type::Int || operand_type == Type::Double {
+                        if operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long
+                        || operand_type == Type::UnsignedShort || operand_type == Type::UnsignedInt || operand_type == Type::UnsignedLong
+                        || operand_type == Type::Float || operand_type == Type::Double {
                             Ok(operand_type)
                         } else {
                             Err((
                                 ErrorType::TypeMismatch {
-                                    expected: "int or double".to_string(),
+                                    expected: "short, int, long, float, or double".to_string(),
                                     found: format!("{operand_type}"),
                                 },
                                 "Cannot apply unary +/- to non-numeric type".to_string(),
@@ -3357,12 +3429,13 @@ impl<'m> SemanticAnalyzer<'m> {
                         }
                     }
                     UnaryOperator::BitNot => {
-                        if operand_type == Type::Any || operand_type == Type::Int {
-                            Ok(Type::Int)
+                        if operand_type == Type::Any || operand_type == Type::Short || operand_type == Type::Int || operand_type == Type::Long
+                        || operand_type == Type::UnsignedShort || operand_type == Type::UnsignedInt || operand_type == Type::UnsignedLong {
+                            Ok(operand_type) 
                         } else {
                             Err((
                                 ErrorType::TypeMismatch {
-                                    expected: "int".to_string(),
+                                    expected: "short, int, or long".to_string(),
                                     found: format!("{operand_type}"),
                                 },
                                 "Cannot apply '~' operator to non-integer type".to_string(),
@@ -3406,7 +3479,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any || right_type == Type::Any {
                             Ok(Type::Any)
                         } else if left_type == right_type
-                            && (left_type == Type::Int || left_type == Type::Double)
+                            && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long
+                                || left_type == Type::UnsignedShort || left_type == Type::UnsignedInt || left_type == Type::UnsignedLong
+                                || left_type == Type::Float || left_type == Type::Double)
                         {
                             Ok(left_type)
                         } else {
@@ -3427,7 +3502,9 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any
                             || right_type == Type::Any
                             || (left_type == right_type
-                                && (left_type == Type::Int || left_type == Type::Double))
+                                && (left_type == Type::Short || left_type == Type::Int || left_type == Type::Long
+                                    || left_type == Type::UnsignedShort || left_type == Type::UnsignedInt || left_type == Type::UnsignedLong
+                                    || left_type == Type::Float || left_type == Type::Double))
                         {
                             Ok(Type::Bool)
                         } else {
@@ -3477,12 +3554,17 @@ impl<'m> SemanticAnalyzer<'m> {
                         if left_type == Type::Any
                             || right_type == Type::Any
                             || (left_type == Type::Int && right_type == Type::Int)
+                            || (left_type == Type::Short && right_type == Type::Short)
+                            || (left_type == Type::Long && right_type == Type::Long)
+                            || (left_type == Type::UnsignedShort && right_type == Type::UnsignedShort)
+                            || (left_type == Type::UnsignedInt && right_type == Type::UnsignedInt)
+                            || (left_type == Type::UnsignedLong && right_type == Type::UnsignedLong)
                         {
-                            Ok(Type::Int)
+                            Ok(left_type)
                         } else {
                             Err((
                                 ErrorType::TypeMismatch {
-                                    expected: "int and int".to_string(),
+                                    expected: "short, int, or long".to_string(),
                                     found: format!("{left_type} and {right_type}"),
                                 },
                                 "Cannot perform bitwise operation on non-integer types"
@@ -4507,13 +4589,14 @@ impl<'m> SemanticAnalyzer<'m> {
                     self.get_expression_type_with_environment(object, &self.environment)?;
                 let index_type =
                     self.get_expression_type_with_environment(index, &self.environment)?;
-                if index_type != Type::Int {
+                if !matches!(index_type, Type::Short | Type::Int | Type::Long
+                    | Type::UnsignedShort | Type::UnsignedInt | Type::UnsignedLong) {
                     return Err((
                         ErrorType::TypeMismatch {
-                            expected: "int".to_string(),
+                            expected: "int, short, or long".to_string(),
                             found: index_type.to_string(),
                         },
-                        "Array index must be of type int".to_string(),
+                        "Array index must be of type int, short, or long".to_string(),
                         index.pos.clone(),
                     ));
                 }
@@ -4549,7 +4632,13 @@ fn pos_of_import(import: &ResolvedImport) -> crate::Position {
 /// The `Type` of a pattern literal
 fn pattern_literal_type(lit: &crate::ast::PatternLiteral) -> Type {
     match lit {
-        crate::ast::PatternLiteral::Int(_) => Type::Int,
+        crate::ast::PatternLiteral::Int(n) => {
+            if *n >= i32::MIN as i64 && *n <= i32::MAX as i64 {
+                Type::Int
+            } else {
+                Type::Long
+            }
+        }
         crate::ast::PatternLiteral::Double(_) => Type::Double,
         crate::ast::PatternLiteral::Bool(_) => Type::Bool,
         crate::ast::PatternLiteral::String(_) => Type::String,
